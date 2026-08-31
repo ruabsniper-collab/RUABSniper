@@ -36,11 +36,3 @@ export async function removeWatch(watchId: string): Promise<void> {
   const { error } = await supabase.from("watches").delete().eq("id", watchId);
   if (error) throw error;
 }
-
-export async function registerPushToken(expoPushToken: string): Promise<void> {
-  const deviceId = await getDeviceId();
-  const { error } = await supabase
-    .from("push_tokens")
-    .upsert({ device_id: deviceId, expo_push_token: expoPushToken, updated_at: new Date().toISOString() });
-  if (error) throw error;
-}

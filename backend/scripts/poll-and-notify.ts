@@ -1,5 +1,6 @@
 // The core "sniper" job: checks every watched section's open/closed status
-// and pushes a notification the moment one flips closed -> open.
+// and emails a summary the moment one flips closed -> open. (Email, not a
+// real push — see backend/lib/resendEmail.ts for why.)
 //
 // Run manually: `npm run poll-and-notify`
 // Run in CI: .github/workflows/poll-and-notify.yml (every 5 min, GitHub
@@ -8,7 +9,7 @@
 import "dotenv/config";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { fetchOpenIndexes } from "../lib/soc.js";
-import { sendExpoPushNotifications, type ExpoPushMessage } from "../lib/expoPush.js";
+import { sendNotificationEmail } from "../lib/resendEmail.js";
 import { termKey, termLabel, type Term } from "../lib/term.js";
 
 type WatchRow = {
@@ -44,15 +45,6 @@ async function sectionLabel(termYear: number, termCode: number, indexNumber: str
   }, index ${indexNumber})`;
 }
 
-async function pushTokenFor(deviceId: string): Promise<string | null> {
-  const { data } = await supabaseAdmin
-    .from("push_tokens")
-    .select("expo_push_token")
-    .eq("device_id", deviceId)
-    .maybeSingle();
-  return (data?.expo_push_token as string | undefined) ?? null;
-}
-
 async function main() {
   const watches = await loadWatches();
   if (watches.length === 0) {
@@ -61,7 +53,8 @@ async function main() {
   }
 
   const termsToCheck = new Map<string, Term>();
-  for (const w of watches) termsToCheck.set(termKey({ year: w.term_year, code: w.term_code }), { year: w.term_year, code: w.term_code });
+  for (const w of watches)
+    termsToCheck.set(termKey({ year: w.term_year, code: w.term_code }), { year: w.term_year, code: w.term_code });
 
   const openByTerm = new Map<string, Set<string>>();
   for (const term of termsToCheck.values()) {
@@ -73,7 +66,7 @@ async function main() {
     }
   }
 
-  const messages: ExpoPushMessage[] = [];
+  const newlyOpenedLabels: string[] = [];
   let opened = 0;
   let closedAgain = 0;
 
@@ -85,23 +78,11 @@ async function main() {
     const isOpenNow = openSet.has(w.index_number);
 
     if (isOpenNow && !w.last_status) {
-      // closed -> open: notify (unless somehow already notified and still open, which
-      // can't happen here since last_status was false).
+      // closed -> open: queue it for this run's notification email.
       opened++;
-      const token = await pushTokenFor(w.device_id);
       const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-      console.log(`[poll] OPENED: device ${w.device_id} — ${label}`);
-      if (token) {
-        messages.push({
-          to: token,
-          title: "A seat opened up 🎉",
-          body: label,
-          sound: "default",
-          data: { indexNumber: w.index_number, termYear: w.term_year, termCode: w.term_code },
-        });
-      } else {
-        console.warn(`[poll] no push token registered for device ${w.device_id}, skipping push`);
-      }
+      console.log(`[poll] OPENED: ${label}`);
+      newlyOpenedLabels.push(label);
       await supabaseAdmin
         .from("watches")
         .update({ last_status: true, notified_at: new Date().toISOString() })
@@ -113,7 +94,17 @@ async function main() {
     }
   }
 
-  if (messages.length > 0) await sendExpoPushNotifications(messages);
+  if (newlyOpenedLabels.length > 0) {
+    const subject =
+      newlyOpenedLabels.length === 1
+        ? `A seat opened up: ${newlyOpenedLabels[0]}`
+        : `${newlyOpenedLabels.length} watched sections opened up`;
+    const html = `<p>Seat(s) just opened:</p><ul>${newlyOpenedLabels
+      .map((l) => `<li>${l}</li>`)
+      .join("")}</ul><p>Go register before it closes again.</p>`;
+    await sendNotificationEmail(subject, html);
+  }
+
   console.log(`[poll] done: ${opened} newly opened, ${closedAgain} closed again, ${watches.length} watches checked`);
 }
 

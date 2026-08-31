@@ -2,13 +2,16 @@
 -- Design notes:
 --   * No user accounts. The app generates a random UUID on first launch
 --     (see mobile/src/lib/deviceId.ts) and that's the only identifier tied
---     to a watch or a push token. There's nothing NetID-shaped to protect.
+--     to a watch. There's nothing NetID-shaped to protect.
 --   * `courses`/`sections` are a cache of the public Rutgers SOC API,
 --     refreshed by backend/scripts/ingest-courses.ts.
 --   * `professor_rmp_matches` is a cache of fuzzy-matched RateMyProfessors
 --     data, refreshed by backend/scripts/match-professors.ts.
 --   * `watches` is what the GitHub Actions poller diffs against to decide
---     when to send a push notification.
+--     when to send a notification email (see backend/lib/resendEmail.ts —
+--     no Apple Developer Program membership, so no real APNs push; the
+--     poller emails a single fixed address instead, set via the
+--     NOTIFY_EMAIL_TO GitHub Actions secret).
 --
 -- RLS is enabled but policies are permissive (any anon-key holder can
 -- read/write). That's acceptable for a personal-scale tool with no
@@ -103,29 +106,18 @@ create index if not exists watches_lookup_idx on watches (term_year, term_code, 
 create index if not exists watches_device_idx on watches (device_id);
 
 -- ---------------------------------------------------------------------
--- push_tokens
--- ---------------------------------------------------------------------
-create table if not exists push_tokens (
-  device_id text primary key,
-  expo_push_token text not null,
-  updated_at timestamptz not null default now()
-);
-
--- ---------------------------------------------------------------------
 -- RLS (permissive — see design notes above)
 -- ---------------------------------------------------------------------
 alter table courses enable row level security;
 alter table sections enable row level security;
 alter table professor_rmp_matches enable row level security;
 alter table watches enable row level security;
-alter table push_tokens enable row level security;
 
 create policy "public read courses" on courses for select using (true);
 create policy "public read sections" on sections for select using (true);
 create policy "public read professor_rmp_matches" on professor_rmp_matches for select using (true);
 
 create policy "anon manage own watches" on watches for all using (true) with check (true);
-create policy "anon manage own push_tokens" on push_tokens for all using (true) with check (true);
 
 -- courses/sections/professor_rmp_matches are written only by the backend
 -- scripts using the service_role key, which bypasses RLS — no anon write
