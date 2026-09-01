@@ -14,22 +14,12 @@ applyTheme(getTheme());
 // Register the service worker as early as possible so a push subscription
 // (created later, from Settings) always has a controller to attach to. Safe
 // to no-op on browsers without support — see lib/push.ts's pushSupported().
+// (sw.js's notificationclick handler always opens a fresh window rather than
+// trying to message an existing one — see its own comment for why — so
+// there's no corresponding message listener needed here.)
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch((err) => {
     console.warn("[sw] registration failed:", err);
-  });
-
-  // sw.js's notificationclick handler posts {type:"navigate", url} to an
-  // already-open window instead of opening a fresh one (see its comment) --
-  // this is the other half of that: without a listener here, tapping a
-  // notification while the app happened to still be open in the background
-  // just focused the window without ever going to the tapped section. A
-  // full navigation (not client-side routing) since this runs outside
-  // react-router entirely.
-  navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data?.type === "navigate" && typeof event.data.url === "string") {
-      window.location.href = event.data.url;
-    }
   });
 }
 

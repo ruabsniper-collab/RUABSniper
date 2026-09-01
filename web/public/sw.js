@@ -37,20 +37,17 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/";
 
+  // Always open a fresh window at the target URL rather than trying to
+  // reuse/focus + postMessage an already-open tab -- verified live, that
+  // path was unreliable (reported: tapping the notification just resumed
+  // whatever page was already open instead of navigating to the sniped
+  // course). Almost certainly iOS suspending a backgrounded PWA tab and
+  // never actually delivering the postMessage to it. clients.openWindow()
+  // is a plain, well-supported "make this URL appear," so this trades a
+  // possible extra tab for navigation that's guaranteed to actually happen.
   event.waitUntil(
     (async () => {
-      // Focus an already-open tab if there is one, otherwise open a new one
-      // — this is why the app's origin matters, not the specific path baked
-      // into `url`, since most useful landings (Register) are a
-      // single-page-app route anyway.
-      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const existing = clientList.find((c) => "focus" in c);
-      if (existing) {
-        existing.postMessage({ type: "navigate", url: targetUrl });
-        await existing.focus();
-      } else {
-        await self.clients.openWindow(targetUrl);
-      }
+      await self.clients.openWindow(targetUrl);
       // Opened last so it ends up front-and-center — the actual next step
       // is on WebReg's side, not ours.
       await self.clients.openWindow(WEBREG_URL);
