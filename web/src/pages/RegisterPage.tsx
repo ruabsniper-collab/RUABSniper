@@ -7,15 +7,10 @@ const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
 // origin — browsers block that as cross-origin scripting, confirmed live
 // against WebReg's own form (neither a GET-query pre-fill nor a same-tab
 // cross-origin POST worked; WebReg's session cookie isn't sent on either,
-// by design). "Copy index" stays the reliable path for everyone.
-//
-// For the extension/ browser extension specifically: the index is also
-// appended to the WebReg URL as a hash fragment (#ruabsniper-index=...).
-// A URL fragment is never sent to the server at all, so this changes
-// nothing for anyone without the extension installed -- WebReg just
-// ignores a fragment it doesn't know about, same as today. The extension's
-// content script (only runs on sims.rutgers.edu/webreg/*) reads it and
-// fills the index box in for you.
+// by design). Genuine autofill would need a browser extension -- tried
+// that too, but asking everyone using this app to install one just to
+// register is too much friction, so copy-index + open WebReg is the one
+// real path, for everyone, no exceptions.
 export function RegisterPage() {
   const [searchParams] = useSearchParams();
   const indexNumber = searchParams.get("index") ?? "";
@@ -29,8 +24,7 @@ export function RegisterPage() {
   }
 
   function openWebReg() {
-    const url = indexNumber ? `${WEBREG_URL}#ruabsniper-index=${indexNumber}` : WEBREG_URL;
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(WEBREG_URL, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -57,9 +51,7 @@ export function RegisterPage() {
       </div>
 
       <p className="hint" style={{ marginTop: 16 }}>
-        Copy the index number above, open WebReg, log in, and paste it into the quick-add box. If you've
-        installed the RUAB Sniper browser extension, "Open WebReg" fills that box in for you automatically
-        — see Settings for how to get it.
+        Copy the index number above, open WebReg, log in, and paste it into the quick-add box.
       </p>
     </div>
   );
