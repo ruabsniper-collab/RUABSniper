@@ -46,13 +46,29 @@ async function distinctInstructorNames(): Promise<string[]> {
 }
 
 async function alreadyFreshNames(): Promise<Set<string>> {
+  // Paginated for the same reason distinctInstructorNames() already is:
+  // Supabase/PostgREST caps an unpaginated select at 1000 rows by default.
+  // Once professor_rmp_matches passed 1000 rows, an unpaginated query here
+  // silently returned an incomplete slice -- pending ended up re-including
+  // names that were actually already fresh, so runs kept re-matching the
+  // same ~1000 professors instead of making progress through the rest.
+  // Verified live: two runs in a row logged "1000 already fresh" and the
+  // table's actual row count didn't move at all between them.
   const cutoff = new Date(Date.now() - RE_MATCH_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await supabaseAdmin
-    .from("professor_rmp_matches")
-    .select("instructor_name")
-    .gte("updated_at", cutoff);
-  if (error) throw error;
-  return new Set((data ?? []).map((r) => r.instructor_name as string));
+  const names = new Set<string>();
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("professor_rmp_matches")
+      .select("instructor_name")
+      .gte("updated_at", cutoff)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const row of data) names.add(row.instructor_name as string);
+    if (data.length < pageSize) break;
+  }
+  return names;
 }
 
 async function main() {
@@ -65,6 +81,7 @@ async function main() {
 
   let matched = 0;
   let unmatched = 0;
+  let failed = 0;
 
   for (const socName of pending) {
     try {
@@ -73,7 +90,14 @@ async function main() {
       const candidates = await searchProfessors(socName);
       const result = pickBestMatch(socName, candidates);
 
-      await supabaseAdmin.from("professor_rmp_matches").upsert(
+      // Checking `error` here matters: without it, a failed write (a
+      // transient Supabase hiccup, a rate limit, whatever) silently vanishes
+      // — the run still logs "done: N matched" even though nothing was
+      // saved, and since alreadyFreshNames() only counts rows that actually
+      // made it into the table, that RMP request was just wasted rather than
+      // recorded. Caught here, it lands in the same catch block below and
+      // gets retried on a future run instead of disappearing unnoticed.
+      const { error } = await supabaseAdmin.from("professor_rmp_matches").upsert(
         {
           instructor_name: socName,
           rmp_legacy_id: result.candidate?.legacyId ?? null,
@@ -91,16 +115,20 @@ async function main() {
         },
         { onConflict: "instructor_name" },
       );
+      if (error) throw error;
 
       if (result.method === "none") unmatched++;
       else matched++;
     } catch (err) {
+      failed++;
       console.error(`[match] failed for "${socName}":`, err instanceof Error ? err.message : err);
     }
     await sleep(REQUEST_DELAY_MS);
   }
 
-  console.log(`[match] done: ${matched} matched, ${unmatched} unmatched this run`);
+  console.log(
+    `[match] done: ${matched} matched, ${unmatched} unmatched, ${failed} failed (will retry next run) this run`,
+  );
 }
 
 main().then(
