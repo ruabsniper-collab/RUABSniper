@@ -72,22 +72,6 @@ type WatchRow = {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.POLL_SECRET;
-
-  // TEMPORARY diagnostic — never reveals either actual value, just enough
-  // shape info to tell whether POLL_SECRET reached this function at all
-  // versus reached it with an unexpected value. Remove once the real
-  // secret check below is confirmed working.
-  if (req.query.debug === "1") {
-    res.status(200).json({
-      envVarIsSet: Boolean(secret),
-      envVarLength: secret?.length ?? 0,
-      queryParamReceived: Boolean(req.query.secret),
-      queryParamLength: typeof req.query.secret === "string" ? req.query.secret.length : 0,
-      queryKeys: Object.keys(req.query),
-    });
-    return;
-  }
-
   if (!secret || req.query.secret !== secret) {
     res.status(401).json({ error: "Unauthorized" });
     return;

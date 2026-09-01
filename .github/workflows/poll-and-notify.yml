@@ -1,11 +1,12 @@
 name: Poll open sections and notify
 
+# Retired as the primary poller: GitHub Actions' free-tier scheduler was
+# verified landing runs 9-21 minutes apart under its runner queue, not the
+# nominal 5. web/api/poll.ts (a Vercel serverless function, triggered every
+# minute by an external free cron-ping service) replaced it for real -- see
+# that file's own comment for why. Kept around, manually-triggerable only,
+# as a fallback if the external pinger ever lapses.
 on:
-  schedule:
-    # GitHub Actions' cron floor is 5 minutes, and under load it can slip
-    # further (see the plan doc) — this is "notify me it opened," not
-    # sub-minute sniping.
-    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:
