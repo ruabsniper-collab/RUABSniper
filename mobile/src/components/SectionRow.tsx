@@ -3,11 +3,17 @@ import type { SectionWithCourse } from "../types/db";
 import { RatingBadge } from "./RatingBadge";
 import { DAY_LABELS, formatMilitaryTime } from "../lib/time";
 
+// A campus of "ONLINE" with no day/time is asynchronous (no live meeting) —
+// see isAsyncMeeting()'s comment in lib/courses.ts for how that was verified.
+function meetingLabel(m: SectionWithCourse["meeting_times"][number]): string {
+  const campus = m.campus ? ` (${m.campus === "ONLINE" ? "Online" : m.campus})` : "";
+  if (!m.day) return m.campus?.toUpperCase() === "ONLINE" ? "Online (async)" : "No regular meeting time";
+  return `${DAY_LABELS[m.day] ?? m.day} ${formatMilitaryTime(m.start)}–${formatMilitaryTime(m.end)}${campus}`;
+}
+
 function meetingSummary(section: SectionWithCourse): string {
-  const parts = section.meeting_times
-    .filter((m) => m.day)
-    .map((m) => `${DAY_LABELS[m.day!] ?? m.day} ${formatMilitaryTime(m.start)}–${formatMilitaryTime(m.end)}`);
-  return parts.length > 0 ? parts.join(", ") : "No regular meeting time";
+  if (section.meeting_times.length === 0) return "No regular meeting time";
+  return section.meeting_times.map(meetingLabel).join(", ");
 }
 
 export function SectionRow({

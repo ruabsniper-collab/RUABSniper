@@ -1,9 +1,10 @@
 # RU Course Sniper
 
 A personal Rutgers registration helper: search the Schedule of Classes by name/subject/core code, see
-best-effort RateMyProfessors ratings and filter by them, filter out sections that conflict with a schedule
-you already have (added by hand or imported from a screenshot), get emailed the moment a full section opens
-a seat, and jump straight into WebReg with the index number already filled in.
+best-effort RateMyProfessors ratings, filter and sort by them (or hide unrated professors entirely), filter
+by campus/online/asynchronous, filter out sections that conflict with a schedule you already have (added by
+hand or imported from a screenshot), get emailed the moment a full section opens a seat, and jump straight
+into WebReg with the index number already filled in.
 
 **No paid Apple account anywhere.** Real APNs push notifications and EAS/App Store builds both require the
 $99/yr Apple Developer Program, so this project avoids both: notifications go out by email instead (your
@@ -111,6 +112,10 @@ npm run poll-and-notify     # check watched sections and email on openings
   is "notify me it opened," not sub-minute sniping.
 - **RateMyProfessors matching is best-effort**: no official API exists; matches carry a confidence score
   and low-confidence ones are labeled "unrated" rather than guessed at.
+- **Asynchronous-online detection is inferred, not an official SOC field**: Rutgers' Schedule of Classes has
+  no "synchronous"/"asynchronous" flag, so [`courses.ts`](mobile/src/lib/courses.ts)'s "Asynchronous" filter
+  treats an online meeting with no scheduled day/time as async and one with a real day/time as synchronous —
+  verified against a live SOC pull, but still a heuristic.
 - **Screenshot schedule import is best-effort**: [`scheduleOcr.ts`](mobile/src/lib/scheduleOcr.ts) OCRs the
   image and pattern-matches "day + time" text, but every guess (label, day, start/end) shows up as an
   editable row — see [`ScreenshotImport.tsx`](mobile/src/components/ScreenshotImport.tsx) — so nothing gets

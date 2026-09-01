@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SearchStackParamList } from "../navigation/types";
-import { searchCourses } from "../lib/courses";
+import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, termLabel } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { loadMySchedule, type ScheduleBlock } from "../lib/schedule";
@@ -25,6 +25,10 @@ export function SearchScreen({ navigation }: Props) {
   const [query, setQuery] = useState("");
   const [minRating, setMinRating] = useState<number | null>(null);
   const [includeUnrated, setIncludeUnrated] = useState(true);
+  const [requireRmpMatch, setRequireRmpMatch] = useState(false);
+  const [sortByRating, setSortByRating] = useState(false);
+  const [locations, setLocations] = useState<Set<string>>(new Set());
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [hideConflicts, setHideConflicts] = useState(false);
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
   const [results, setResults] = useState<SectionWithCourse[]>([]);
@@ -54,6 +58,9 @@ export function SearchScreen({ navigation }: Props) {
         query,
         minRating: minRating ?? undefined,
         includeUnratedWhenFiltering: includeUnrated,
+        requireRmpMatch,
+        sortByRating,
+        locations: locations.size > 0 ? [...locations] : undefined,
         hideScheduleConflicts: hideConflicts,
         mySchedule,
       });
@@ -63,12 +70,21 @@ export function SearchScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [query, minRating, includeUnrated, hideConflicts, mySchedule]);
+  }, [query, minRating, includeUnrated, requireRmpMatch, sortByRating, locations, hideConflicts, mySchedule]);
 
   useEffect(() => {
     const handle = setTimeout(runSearch, 350); // debounce
     return () => clearTimeout(handle);
   }, [runSearch]);
+
+  function toggleLocation(value: string) {
+    setLocations((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
 
   async function toggleWatch(section: SectionWithCourse) {
     const existingId = watchIdByIndex.get(section.index_number);
@@ -118,6 +134,39 @@ export function SearchScreen({ navigation }: Props) {
         <Text style={styles.filterLabel}>Hide conflicts with My Schedule ({mySchedule.length} blocks)</Text>
         <Switch value={hideConflicts} onValueChange={setHideConflicts} />
       </View>
+
+      <Text style={styles.moreFiltersToggle} onPress={() => setShowMoreFilters((v) => !v)}>
+        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (sort, location, online/async)"}
+      </Text>
+
+      {showMoreFilters && (
+        <>
+          <View style={styles.switchRow}>
+            <Text style={styles.filterLabel}>Only show professors with an RMP profile</Text>
+            <Switch value={requireRmpMatch} onValueChange={setRequireRmpMatch} />
+          </View>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.filterLabel}>Sort by highest-rated professor first</Text>
+            <Switch value={sortByRating} onValueChange={setSortByRating} />
+          </View>
+
+          <View style={styles.filterRow}>
+            <Text style={styles.filterLabel}>Campus / online</Text>
+            <View style={styles.ratingChips}>
+              {LOCATION_OPTIONS.map((opt) => (
+                <Text
+                  key={opt.value}
+                  onPress={() => toggleLocation(opt.value)}
+                  style={[styles.chip, locations.has(opt.value) && styles.chipActive]}
+                >
+                  {opt.label}
+                </Text>
+              ))}
+            </View>
+          </View>
+        </>
+      )}
 
       {loading && <ActivityIndicator style={{ marginTop: 12 }} />}
       {error && <Text style={styles.error}>{error}</Text>}
@@ -174,6 +223,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
+  moreFiltersToggle: { fontSize: 12, color: "#0969da", fontWeight: "600", marginTop: 12 },
   error: { color: "#cf222e", marginTop: 8 },
   empty: { textAlign: "center", color: "#57606a", marginTop: 24 },
 });
