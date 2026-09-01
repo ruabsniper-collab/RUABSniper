@@ -32,34 +32,19 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Every notification this app sends means "a seat just opened, go register"
-// (see backend/scripts/poll-and-notify.ts — it's the only sender), so
-// tapping it opens WebReg directly too, not just the app's own Register
-// page — no extra tap on that page's "Open WebReg" button needed. A page
-// can't pop a window open on its own (popup blockers everywhere, Safari
-// especially), but a service worker responding to an actual notification
-// tap is explicitly allowed to via clients.openWindow(), which is why this
-// happens here rather than as a useEffect on the Register page itself.
-const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
-
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/";
 
-  // Always open a fresh window at the target URL rather than trying to
-  // reuse/focus + postMessage an already-open tab -- verified live, that
-  // path was unreliable (reported: tapping the notification just resumed
-  // whatever page was already open instead of navigating to the sniped
-  // course). Almost certainly iOS suspending a backgrounded PWA tab and
-  // never actually delivering the postMessage to it. clients.openWindow()
-  // is a plain, well-supported "make this URL appear," so this trades a
-  // possible extra tab for navigation that's guaranteed to actually happen.
-  event.waitUntil(
-    (async () => {
-      await self.clients.openWindow(targetUrl);
-      // Opened last so it ends up front-and-center — the actual next step
-      // is on WebReg's side, not ours.
-      await self.clients.openWindow(WEBREG_URL);
-    })(),
-  );
+  // Just the one destination: the app's own Register page for this exact
+  // section, where "Open WebReg" is right there ready to tap (see
+  // SectionRow.tsx — it only shows that button once a section is open,
+  // which this notification means it just became). Tried also opening
+  // WebReg itself directly in a second tab; verified live on iOS that
+  // Safari only honors one clients.openWindow() call per notification tap
+  // and picked WebReg over this one, which isn't what was asked for.
+  // Always a *fresh* window rather than trying to reuse/focus + postMessage
+  // an already-open tab -- verified live, that path was unreliable too
+  // (tapping the notification just resumed whatever page was already open).
+  event.waitUntil(self.clients.openWindow(targetUrl));
 });
