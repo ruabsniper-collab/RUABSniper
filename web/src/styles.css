@@ -64,6 +64,70 @@
   box-sizing: border-box;
 }
 
+/* Press feedback + smooth state changes on everything tappable, plus a
+   gentle "pop in" for cards/rows as they're added to a list (search
+   results, snipes, schedule blocks) -- a plain CSS `animation` plays
+   automatically the moment an element enters the DOM, no JS needed to
+   trigger it per item. Grouped here once rather than repeated in every
+   individual button/chip rule below. Respects prefers-reduced-motion,
+   same as any motion added to a page should. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn,
+  .btn-secondary,
+  .btn-danger,
+  .btn-green,
+  .chip,
+  .day-chip,
+  .watch-btn,
+  .mode-tab,
+  .segmented button,
+  .bottom-nav a,
+  .badge {
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease,
+      transform 0.1s ease;
+  }
+
+  .btn:active,
+  .btn-secondary:active,
+  .btn-danger:active,
+  .btn-green:active,
+  .chip:active,
+  .day-chip:active,
+  .watch-btn:active,
+  .mode-tab:active,
+  .segmented button:active {
+    transform: scale(0.95);
+  }
+
+  .section-row,
+  .card {
+    animation: pop-in 0.2s ease-out both;
+    transition: transform 0.1s ease, box-shadow 0.15s ease;
+  }
+
+  .section-row:active {
+    transform: scale(0.985);
+  }
+
+  .pill {
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 html,
 body,
 #root {
