@@ -1,7 +1,8 @@
 import { supabase } from "./supabase";
-import type { Course, ProfessorRmpMatch, Section, SectionWithCourse } from "../types/db";
+import type { Course, ProfessorRmpMatch, Section, SectionWithCourse, Watch } from "../types/db";
 import type { Term } from "./term";
 import { checkConflict, type ScheduleBlock } from "./schedule";
+import { listWatches } from "./watches";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
 
@@ -195,4 +196,66 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
   }
 
   return sections;
+}
+
+export type WatchedSection = { watch: Watch; section: SectionWithCourse | null };
+
+/**
+ * Every current watch, each joined with its full section+course+RMP-rating
+ * data so the Snipes tab can render with the same SectionRow used
+ * everywhere else instead of a bare term/index/status line. `section` is
+ * null for a watch whose index no longer exists in the cached catalog
+ * (rare, but a dropped/renumbered section shouldn't crash the whole page).
+ */
+export async function getWatchedSections(): Promise<WatchedSection[]> {
+  const watches = await listWatches();
+  if (watches.length === 0) return [];
+
+  // Watches can in principle span more than one term, so group and query
+  // per term rather than assuming they're all the same one.
+  const byTerm = new Map<string, Watch[]>();
+  for (const w of watches) {
+    const key = `${w.term_year}:${w.term_code}`;
+    const group = byTerm.get(key);
+    if (group) group.push(w);
+    else byTerm.set(key, [w]);
+  }
+
+  let sections: SectionWithCourse[] = [];
+  for (const group of byTerm.values()) {
+    const { data, error } = await supabase
+      .from("sections")
+      .select("*, courses(*)")
+      .eq("term_year", group[0].term_year)
+      .eq("term_code", group[0].term_code)
+      .in(
+        "index_number",
+        group.map((w) => w.index_number),
+      );
+    if (error) throw error;
+    sections = sections.concat(
+      ((data ?? []) as (Section & { courses: Course })[]).map((row) => ({ ...row, courses: row.courses })),
+    );
+  }
+
+  const instructorNames = new Set<string>();
+  for (const s of sections) for (const i of s.instructors) instructorNames.add(normalizeInstructorName(i));
+
+  if (instructorNames.size > 0) {
+    const { data: ratings, error } = await supabase
+      .from("professor_rmp_matches")
+      .select("*")
+      .in("instructor_name", [...instructorNames]);
+    if (error) throw error;
+    const ratingsByName = new Map<string, ProfessorRmpMatch>(
+      (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
+    );
+    sections = sections.map((s) => ({ ...s, professorRating: bestRatingFor(s.instructors, ratingsByName) }));
+  }
+
+  const sectionByKey = new Map(sections.map((s) => [`${s.term_year}:${s.term_code}:${s.index_number}`, s]));
+  return watches.map((w) => ({
+    watch: w,
+    section: sectionByKey.get(`${w.term_year}:${w.term_code}:${w.index_number}`) ?? null,
+  }));
 }

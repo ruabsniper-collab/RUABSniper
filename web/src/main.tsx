@@ -18,6 +18,19 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch((err) => {
     console.warn("[sw] registration failed:", err);
   });
+
+  // sw.js's notificationclick handler posts {type:"navigate", url} to an
+  // already-open window instead of opening a fresh one (see its comment) --
+  // this is the other half of that: without a listener here, tapping a
+  // notification while the app happened to still be open in the background
+  // just focused the window without ever going to the tapped section. A
+  // full navigation (not client-side routing) since this runs outside
+  // react-router entirely.
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "navigate" && typeof event.data.url === "string") {
+      window.location.href = event.data.url;
+    }
+  });
 }
 
 createRoot(document.getElementById("root")!).render(

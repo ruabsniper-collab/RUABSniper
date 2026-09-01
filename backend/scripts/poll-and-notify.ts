@@ -87,7 +87,10 @@ async function main() {
       await sendPushToDevice(w.device_id, {
         title: "A seat opened up!",
         body: label,
-        url: "/watches",
+        // Straight to the Register page for this exact section, not just
+        // the general Snipes tab -- "Copy index" / "Open WebReg" should be
+        // one tap away from the notification, not a second navigation.
+        url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
       });
       await supabaseAdmin
         .from("watches")
