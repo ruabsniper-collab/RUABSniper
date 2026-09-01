@@ -26,6 +26,31 @@ const OCR_ENDPOINT = "https://api.ocr.space/parse/image";
 type OcrSpaceWord = { WordText?: string; Left?: number; Top?: number; Width?: number; Height?: number };
 type OcrSpaceLine = { Words?: OcrSpaceWord[]; MaxHeight?: number; MinTop?: number };
 
+/**
+ * OCR.space often splits one visually-tight token (e.g. "8:30") into
+ * several "words" ("8", ":", "30") that all share the *same* (or
+ * overlapping) bounding box, rather than one word with sub-pixel-accurate
+ * boxes. Verified against a real API response: those sub-tokens' gaps
+ * (nextWord.Left - (prevWord.Left + prevWord.Width)) come back sharply
+ * negative (-21 to -26 in the sample), while genuine word boundaries are a
+ * tiny positive gap (+1 to +2, since the mock schedule's font is small).
+ * Blindly joining every word with " " turned "8:30 AM" into "8 : 30 AM",
+ * which TIME_RANGE_RE (and the course-code / credits regexes) don't match
+ * at all -- silently zeroing out every draft. Only insert a space when the
+ * gap is actually positive.
+ */
+function joinWords(words: OcrSpaceWord[]): string {
+  let text = "";
+  let prevRight: number | null = null;
+  for (const w of words) {
+    const left = w.Left ?? 0;
+    if (prevRight != null && left - prevRight > 0) text += " ";
+    text += w.WordText ?? "";
+    prevRight = left + (w.Width ?? 0);
+  }
+  return text;
+}
+
 function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] {
   const out: PositionedLine[] = [];
   for (const line of lines ?? []) {
@@ -35,7 +60,7 @@ function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] 
     const rights = words.map((w) => (w.Left ?? 0) + (w.Width ?? 0));
     const left = Math.min(...lefts);
     out.push({
-      text: words.map((w) => w.WordText).join(" "),
+      text: joinWords(words),
       left,
       top: line.MinTop ?? Math.min(...words.map((w) => w.Top ?? 0)),
       width: Math.max(...rights) - left,
