@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import type { SectionWithCourse } from "../types/db";
 import { RatingBadge } from "./RatingBadge";
 import { DAY_LABELS, formatMilitaryTime } from "../lib/time";
@@ -26,6 +27,14 @@ export function SectionRow({
   onToggleWatch?: () => void;
   isWatched?: boolean;
 }) {
+  const navigate = useNavigate();
+
+  function openWebReg(e: React.MouseEvent) {
+    e.stopPropagation();
+    const label = `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
+    navigate(`/register?index=${section.index_number}&label=${encodeURIComponent(label)}`);
+  }
+
   return (
     <div className="section-row" onClick={onClick} role={onClick ? "button" : undefined}>
       <div className="section-row-header">
@@ -55,6 +64,16 @@ export function SectionRow({
           </button>
         )}
       </div>
+      {/* Only when actually open — a WebReg shortcut for a closed section
+          isn't useful, there's nothing to register for yet. Right on the
+          row (Search, Course Detail, Snipes all render this component) so
+          it's one tap the moment it matters, not a click-into-the-course
+          away. */}
+      {section.open && (
+        <button className="btn" style={{ marginTop: 4 }} onClick={openWebReg}>
+          Open WebReg with index copied →
+        </button>
+      )}
     </div>
   );
 }

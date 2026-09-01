@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { maybePromptAfterAddingWatch } from "../lib/push";
@@ -10,7 +10,6 @@ import type { Term } from "../lib/term";
 export function CourseDetailPage() {
   const { courseId = "" } = useParams();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const term: Term = { year: Number(searchParams.get("year")), code: Number(searchParams.get("code")) };
 
   const [sections, setSections] = useState<SectionWithCourse[]>([]);
@@ -72,26 +71,12 @@ export function CourseDetailPage() {
         </div>
       )}
       {sections.map((item) => (
-        <div key={item.id}>
-          <SectionRow
-            section={item}
-            isWatched={watchIdByIndex.has(item.index_number)}
-            onToggleWatch={() => toggleWatch(item)}
-          />
-          <button
-            className="btn"
-            style={{ width: "100%", marginTop: -4, marginBottom: 12 }}
-            onClick={() =>
-              navigate(
-                `/register?index=${item.index_number}&label=${encodeURIComponent(
-                  `${item.courses.subject_code}:${item.courses.course_number} sec ${item.section_number}`,
-                )}`,
-              )
-            }
-          >
-            Open WebReg with index copied →
-          </button>
-        </div>
+        <SectionRow
+          key={item.id}
+          section={item}
+          isWatched={watchIdByIndex.has(item.index_number)}
+          onToggleWatch={() => toggleWatch(item)}
+        />
       ))}
     </div>
   );
