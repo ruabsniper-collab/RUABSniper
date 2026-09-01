@@ -1,4 +1,4 @@
-# RU Course Sniper
+# RUAB Sniper
 
 A Rutgers registration helper, built to share: search the Schedule of Classes by name/subject/core code,
 see best-effort RateMyProfessors ratings, filter and sort by them (or hide unrated professors entirely),

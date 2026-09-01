@@ -1,6 +1,6 @@
 {
-  "name": "RU Course Sniper",
-  "short_name": "CourseSniper",
+  "name": "RUAB Sniper",
+  "short_name": "RUAB Sniper",
   "description": "Rutgers course search, RateMyProfessors ratings, and open-seat notifications.",
   "start_url": "/",
   "scope": "/",

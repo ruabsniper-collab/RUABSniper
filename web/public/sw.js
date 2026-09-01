@@ -5,7 +5,7 @@
 // course/seat data over a stale cache.
 
 self.addEventListener("push", (event) => {
-  let data = { title: "RU Course Sniper", body: "A watched section changed.", url: "/watches" };
+  let data = { title: "RUAB Sniper", body: "A watched section changed.", url: "/watches" };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch {
