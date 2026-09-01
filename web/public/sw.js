@@ -36,15 +36,35 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/";
 
-  // Just the one destination: the app's own Register page for this exact
-  // section, where "Open WebReg" is right there ready to tap (see
-  // SectionRow.tsx — it only shows that button once a section is open,
-  // which this notification means it just became). Tried also opening
-  // WebReg itself directly in a second tab; verified live on iOS that
-  // Safari only honors one clients.openWindow() call per notification tap
-  // and picked WebReg over this one, which isn't what was asked for.
-  // Always a *fresh* window rather than trying to reuse/focus + postMessage
-  // an already-open tab -- verified live, that path was unreliable too
-  // (tapping the notification just resumed whatever page was already open).
-  event.waitUntil(self.clients.openWindow(targetUrl));
+  // The app's own Register page for this exact section is the one
+  // destination -- "Open WebReg" is right there ready to tap (see
+  // SectionRow.tsx, which only shows that button once a section is open,
+  // which this notification means it just became). Also opening WebReg
+  // itself directly was tried and dropped: verified live on iOS, Safari
+  // only honors one clients.openWindow() call per notification tap and
+  // picked WebReg over this one.
+  //
+  // openWindow() alone isn't enough either, though: verified live again,
+  // when the app was already running in the background, tapping the
+  // notification just resumed it showing whatever page it already had
+  // open (Search) -- openWindow() doesn't force an existing same-scope
+  // PWA instance to actually navigate anywhere on iOS, it just focuses it.
+  // WindowClient.navigate() is the API actually meant for this: a service
+  // worker pushing an *existing* window to a new URL directly, no
+  // dependency on that page's own JS cooperating (unlike the postMessage
+  // approach tried earlier, which needs the page to still be alive enough
+  // to receive and act on a message -- also unreliable, likely for the
+  // same "backgrounded/suspended" reason).
+  event.waitUntil(
+    (async () => {
+      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const existing = clientList.find((c) => "navigate" in c);
+      if (existing) {
+        await existing.navigate(targetUrl);
+        await existing.focus();
+      } else {
+        await self.clients.openWindow(targetUrl);
+      }
+    })(),
+  );
 });
