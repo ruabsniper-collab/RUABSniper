@@ -13,20 +13,50 @@ export type ScheduleBlockDraft = {
   start: string | null; // "HHMM" military, or null if the time couldn't be read
   end: string | null;
   sourceLine: string; // the OCR'd line this was guessed from, shown for review
-  dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image — see parseScheduleText
+  dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image
 };
+
+/** One OCR'd line with its pixel bounding box, reconstructed from OCR.space's word-level overlay data. */
+export type PositionedLine = { text: string; left: number; top: number; width: number; height: number };
+
+export type OcrResult = { text: string; lines: PositionedLine[] };
 
 const OCR_ENDPOINT = "https://api.ocr.space/parse/image";
 
+type OcrSpaceWord = { WordText?: string; Left?: number; Top?: number; Width?: number; Height?: number };
+type OcrSpaceLine = { Words?: OcrSpaceWord[]; MaxHeight?: number; MinTop?: number };
+
+function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] {
+  const out: PositionedLine[] = [];
+  for (const line of lines ?? []) {
+    const words = (line.Words ?? []).filter((w) => w.WordText);
+    if (words.length === 0) continue;
+    const lefts = words.map((w) => w.Left ?? 0);
+    const rights = words.map((w) => (w.Left ?? 0) + (w.Width ?? 0));
+    const left = Math.min(...lefts);
+    out.push({
+      text: words.map((w) => w.WordText).join(" "),
+      left,
+      top: line.MinTop ?? Math.min(...words.map((w) => w.Top ?? 0)),
+      width: Math.max(...rights) - left,
+      height: line.MaxHeight ?? Math.max(...words.map((w) => w.Height ?? 0)),
+    });
+  }
+  return out;
+}
+
 /**
  * Sends a JPEG (base64, no "data:" prefix) to OCR.space's free tier and
- * returns the recognized text. Get a free key (no card required, 25k
+ * returns both the plain recognized text and, when available, each line's
+ * pixel position (isOverlayRequired) -- the position data is what lets
+ * parseScheduleImage() below match a class to the day column it's actually
+ * under, instead of guessing. Get a free key (no card required, 25k
  * requests/month / 500 a day) at https://ocr.space/ocrapi/freekey and put
  * it in web/.env as VITE_OCR_SPACE_API_KEY -- see web/.env.example. Run
  * entirely client-side; nothing about this call touches Supabase or the
  * backend.
  */
-export async function runScheduleOcr(base64Jpeg: string): Promise<string> {
+export async function runScheduleOcr(base64Jpeg: string): Promise<OcrResult> {
   const apiKey = import.meta.env.VITE_OCR_SPACE_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -41,6 +71,7 @@ export async function runScheduleOcr(base64Jpeg: string): Promise<string> {
   form.append("isTable", "true"); // schedules are usually grid-shaped
   form.append("scale", "true"); // upscales small grid text before OCR
   form.append("OCREngine", "2"); // engine 2 reads small/dense text more reliably
+  form.append("isOverlayRequired", "true"); // word positions -- see toPositionedLines()
   form.append("base64Image", `data:image/jpeg;base64,${base64Jpeg}`);
 
   const res = await fetch(OCR_ENDPOINT, { method: "POST", body: form });
@@ -49,7 +80,7 @@ export async function runScheduleOcr(base64Jpeg: string): Promise<string> {
   const json = (await res.json()) as {
     IsErroredOnProcessing?: boolean;
     ErrorMessage?: string | string[];
-    ParsedResults?: { ParsedText?: string }[];
+    ParsedResults?: { ParsedText?: string; TextOverlay?: { Lines?: OcrSpaceLine[] } }[];
   };
 
   if (json.IsErroredOnProcessing) {
@@ -57,10 +88,14 @@ export async function runScheduleOcr(base64Jpeg: string): Promise<string> {
     throw new Error(msg || "OCR.space couldn't process that image.");
   }
 
-  return (json.ParsedResults ?? []).map((r) => r.ParsedText ?? "").join("\n");
+  const results = json.ParsedResults ?? [];
+  return {
+    text: results.map((r) => r.ParsedText ?? "").join("\n"),
+    lines: results.flatMap((r) => toPositionedLines(r.TextOverlay?.Lines)),
+  };
 }
 
-// ---- Day-run tokenizing ----------------------------------------------------
+// ---- Day names ---------------------------------------------------------------
 
 // Ordered longest-name-first so "Thursday" is consumed whole before falling
 // back to "Thu"/"Th", and "Tuesday" before the bare "T" that would otherwise
@@ -102,6 +137,14 @@ function expandDayRun(run: string): string[] {
   return [...new Set(days)];
 }
 
+/** True only if the *entire* line is one day name/abbreviation — a calendar grid's column header, not prose mentioning a day. */
+function wholeLineDay(text: string): string | null {
+  const cleaned = text.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!cleaned || cleaned.length > 9) return null; // longer than "wednesday" can't be a bare day name
+  const hit = DAY_NAMES.find(([name]) => name === cleaned && name.length > 1); // single letters are too ambiguous as a whole-line match
+  return hit ? hit[1] : null;
+}
+
 // ---- Time parsing -----------------------------------------------------------
 
 /** Looser than time.ts's parseTimeToMilitary -- tolerates OCR noise like "3-4:15pm", "930am", "3.50 PM". */
@@ -126,25 +169,21 @@ function parseLooseTime(raw: string, inheritPeriod?: "AM" | "PM"): string | null
 const TIME_RANGE_RE =
   /(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\s*(?:-|–|—|to)\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))/;
 
+function parseTimeRange(m: RegExpMatchArray): { start: string | null; end: string | null } {
+  const endRaw = m[2];
+  const endPeriodMatch = endRaw.toUpperCase().match(/AM|PM/);
+  const endPeriod = endPeriodMatch ? (endPeriodMatch[0] as "AM" | "PM") : undefined;
+  return { start: parseLooseTime(m[1], endPeriod), end: parseLooseTime(endRaw, endPeriod) };
+}
+
+// ---- Simple-list parsing (no position data) ----------------------------------
+
 /**
  * Scans OCR'd text line by line for "<label?> <day(s)> <start>-<end>"
- * patterns. Every field is a guess -- the review UI shows `sourceLine`
- * next to each one and lets the user fix or discard it before it's saved.
- *
- * That "<day(s)>" is only there at all for a schedule that's typed out as a
- * list ("CS 111 MW 3:50-5:10"). WebReg's own Calendar view -- almost
- * certainly the single most common screenshot people will actually upload,
- * since it's the default schedule screen -- names each day exactly once, as
- * a column header, never as text attached to an individual class block. OCR
- * flattens that grid to plain text with no day anywhere near the time, so
- * requiring a day match on the line used to mean these got silently
- * dropped -- not shown as unparseable, not editable, just gone, with
- * nothing in the UI to explain why a real class never showed up. Now a time
- * range with no day on its line still becomes a draft, day defaulted to
- * Monday and flagged `dayGuessed` (see ScreenshotImport.tsx, which leaves
- * these unchecked by default so nothing gets silently added with a
- * possibly-wrong day) -- the reviewer picks the real day from the same
- * day-chip row every other draft already has.
+ * patterns -- for a schedule that's typed out as a list ("CS 111 MW
+ * 3:50-5:10"), or as a fallback when no position data came back from OCR.
+ * Every field is a guess -- the review UI shows `sourceLine` next to each
+ * one and lets the user fix or discard it before it's saved.
  */
 export function parseScheduleText(text: string): ScheduleBlockDraft[] {
   const drafts: ScheduleBlockDraft[] = [];
@@ -155,12 +194,7 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
 
     const timeMatch = line.match(TIME_RANGE_RE);
     if (!timeMatch || timeMatch.index == null) continue;
-
-    const endRaw = timeMatch[2];
-    const endPeriodMatch = endRaw.toUpperCase().match(/AM|PM/);
-    const endPeriod = endPeriodMatch ? (endPeriodMatch[0] as "AM" | "PM") : undefined;
-    const end = parseLooseTime(endRaw, endPeriod);
-    const start = parseLooseTime(timeMatch[1], endPeriod);
+    const { start, end } = parseTimeRange(timeMatch);
 
     const before = line.slice(0, timeMatch.index);
     const dayRuns = [...before.matchAll(DAY_RUN_RE)];
@@ -180,6 +214,97 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
     for (const day of days) {
       drafts.push({ label, day, start, end, sourceLine: line });
     }
+  }
+
+  return drafts;
+}
+
+// ---- Calendar-grid parsing (uses OCR word positions) -------------------------
+
+// SOC's own "subject:course:section:index" style code, e.g. "01:640:151:01:12932"
+// -- WebReg prints this under every class's title, so it's a reliable signal
+// that the title portion of a block has ended.
+const COURSE_CODE_RE = /^\d{2}:\d{3}:\d{3}/;
+// "(4.0)" credits, printed right after the code line.
+const CREDITS_RE = /^\(\d/;
+
+/**
+ * A WebReg Calendar-view screenshot names each day exactly once, as a
+ * column header -- never as text next to an individual class block -- so
+ * there's nothing for parseScheduleText()'s per-line day search to find.
+ * With OCR.space's word positions (see runScheduleOcr), the real fix is the
+ * obvious one: find the header row, then match every class block to
+ * whichever day column it actually sits under by X position, the same way
+ * a person reading the grid would. This also lets each block's title be
+ * reconstructed from the lines directly below its time (same column, before
+ * the course-code line) instead of falling back to a placeholder.
+ *
+ * Falls back to parseScheduleText(text) when no day-header row is found --
+ * either OCR didn't return position data, or this isn't a grid at all (a
+ * typed list, a photo of a printout, etc.).
+ */
+export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
+  const { lines, text } = result;
+
+  const dayLines = lines
+    .map((line) => ({ line, day: wholeLineDay(line.text) }))
+    .filter((x): x is { line: PositionedLine; day: string } => x.day != null);
+
+  if (dayLines.length < 2) return parseScheduleText(text); // not a grid we can read positionally
+
+  // The header row is the tightest cluster of day-name lines near the top —
+  // there's exactly one occurrence of each day name as a header, at nearly
+  // identical Top values, well above any within-cell text.
+  const minTop = Math.min(...dayLines.map((d) => d.line.top));
+  const tolerance = Math.max(20, ...dayLines.map((d) => d.line.height)); // scale with the image's actual font size
+  const headerRow = dayLines
+    .filter((d) => d.line.top <= minTop + tolerance)
+    .map((d) => ({ day: d.day, centerX: d.line.left + d.line.width / 2 }));
+  if (headerRow.length < 2) return parseScheduleText(text);
+
+  function nearestColumn(centerX: number): string {
+    return headerRow.reduce((best, col) =>
+      Math.abs(col.centerX - centerX) < Math.abs(best.centerX - centerX) ? col : best,
+    ).day;
+  }
+
+  const drafts: ScheduleBlockDraft[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const timeMatch = line.text.match(TIME_RANGE_RE);
+    if (!timeMatch) continue;
+
+    const { start, end } = parseTimeRange(timeMatch);
+    const day = nearestColumn(line.left + line.width / 2);
+    const blockCenterX = line.left + line.width / 2;
+
+    // Reconstruct the title from the lines right after the time, same
+    // column (within half the header's own column width, generous enough
+    // for text that's narrower or wider than the time line itself), up
+    // until the course-code line, a credits line, the next time range, or
+    // 3 lines out -- whichever comes first.
+    const columnWidth =
+      headerRow.length > 1
+        ? Math.abs(headerRow[1].centerX - headerRow[0].centerX)
+        : line.width * 2;
+    const titleParts: string[] = [];
+    for (let j = i + 1; j < lines.length && titleParts.length < 3; j++) {
+      const next = lines[j];
+      if (TIME_RANGE_RE.test(next.text)) break;
+      const trimmed = next.text.trim();
+      if (COURSE_CODE_RE.test(trimmed) || CREDITS_RE.test(trimmed)) break;
+      const sameColumn = Math.abs(next.left + next.width / 2 - blockCenterX) < columnWidth / 2;
+      if (!sameColumn) continue;
+      titleParts.push(trimmed);
+    }
+
+    drafts.push({
+      label: titleParts.join(" ").trim() || "Imported class",
+      day,
+      start,
+      end,
+      sourceLine: line.text,
+    });
   }
 
   return drafts;

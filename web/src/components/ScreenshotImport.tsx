@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { addScheduleBlock } from "../lib/schedule";
-import { runScheduleOcr, parseScheduleText, type ScheduleBlockDraft } from "../lib/scheduleOcr";
+import { runScheduleOcr, parseScheduleImage, type ScheduleBlockDraft } from "../lib/scheduleOcr";
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
 
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
@@ -72,9 +72,9 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
 
     try {
       const base64 = await fileToBase64(file);
-      const text = await runScheduleOcr(base64);
-      setRawText(text);
-      setDrafts(parseScheduleText(text).map(toDraftRow));
+      const result = await runScheduleOcr(base64);
+      setRawText(result.text);
+      setDrafts(parseScheduleImage(result).map(toDraftRow));
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
