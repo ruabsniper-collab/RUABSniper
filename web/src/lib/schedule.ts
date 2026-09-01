@@ -5,6 +5,7 @@
 
 import type { MeetingTime } from "../types/db";
 import { militaryToMinutes } from "./time";
+import { randomUUID } from "./uuid";
 
 export type ScheduleBlock = {
   id: string;
@@ -32,7 +33,7 @@ function saveMySchedule(blocks: ScheduleBlock[]): void {
 
 export function addScheduleBlock(block: Omit<ScheduleBlock, "id">): ScheduleBlock[] {
   const blocks = loadMySchedule();
-  const next = [...blocks, { ...block, id: crypto.randomUUID() }];
+  const next = [...blocks, { ...block, id: randomUUID() }];
   saveMySchedule(next);
   return next;
 }

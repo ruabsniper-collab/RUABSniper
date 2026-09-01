@@ -1,19 +1,63 @@
-/* Single global stylesheet, matching the mobile app's color palette so this
-   reads as a continuation, not a redesign. Plain CSS, no framework -- this
-   app is small enough that a build-time CSS pipeline would be pure overhead. */
+/* Single global stylesheet. Brand accent is Rutgers Scarlet (#CC0033,
+   verified against Rutgers' own visual identity, not guessed) rather than a
+   generic blue. Plain CSS, no framework -- this app is small enough that a
+   build-time CSS pipeline would be pure overhead.
+
+   Theming: three states, same pattern as any theme-aware web page --
+   `:root` holds the light palette (the default); a `prefers-color-scheme`
+   media query swaps in dark tokens when the OS prefers dark AND the user
+   hasn't explicitly picked light; an explicit `data-theme` attribute (set by
+   the toggle in Settings, see src/lib/theme.ts) always wins over system
+   preference in either direction. */
 
 :root {
-  --blue: #0969da;
+  --accent: #cc0033;
+  --accent-contrast: #fff;
   --border: #d0d7de;
   --muted: #57606a;
   --text: #24292f;
   --bg: #f6f8fa;
+  --card-bg: #fff;
   --green-bg: #dafbe1;
   --green: #1a7f37;
   --red-bg: #ffebe9;
-  --red: #cf222e;
+  --red: #a4133c;
   --yellow-bg: #fff8c5;
   --yellow: #9a6700;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --accent: #ff4d6d;
+    --accent-contrast: #1a0006;
+    --border: #30363d;
+    --muted: #8b949e;
+    --text: #e6edf3;
+    --bg: #0d1117;
+    --card-bg: #161b22;
+    --green-bg: #12261c;
+    --green: #3fb950;
+    --red-bg: #3d1420;
+    --red: #ff6b87;
+    --yellow-bg: #2b2111;
+    --yellow: #d29922;
+  }
+}
+
+:root[data-theme="dark"] {
+  --accent: #ff4d6d;
+  --accent-contrast: #1a0006;
+  --border: #30363d;
+  --muted: #8b949e;
+  --text: #e6edf3;
+  --bg: #0d1117;
+  --card-bg: #161b22;
+  --green-bg: #12261c;
+  --green: #3fb950;
+  --red-bg: #3d1420;
+  --red: #ff6b87;
+  --yellow-bg: #2b2111;
+  --yellow: #d29922;
 }
 
 * {
@@ -55,7 +99,7 @@ body {
   left: 0;
   right: 0;
   display: flex;
-  background: #fff;
+  background: var(--card-bg);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -71,7 +115,7 @@ body {
 }
 
 .bottom-nav a.active {
-  color: var(--blue);
+  color: var(--accent);
 }
 
 h1,
@@ -90,7 +134,8 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
-  background: #fff;
+  background: var(--card-bg);
+  color: var(--text);
   font-size: 14px;
 }
 
@@ -116,15 +161,15 @@ h3 {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
-  background: #fff;
+  background: var(--card-bg);
   color: var(--text);
   cursor: pointer;
 }
 
 .chip.active {
-  background: var(--blue);
-  color: #fff;
-  border-color: var(--blue);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
 }
 
 .switch-row {
@@ -137,7 +182,7 @@ h3 {
 
 .more-filters-toggle {
   font-size: 12px;
-  color: var(--blue);
+  color: var(--accent);
   font-weight: 600;
   margin-top: 12px;
   cursor: pointer;
@@ -160,7 +205,7 @@ h3 {
 }
 
 .card {
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
@@ -181,7 +226,7 @@ h3 {
   border-radius: 10px;
   padding: 12px;
   margin-bottom: 10px;
-  background: #fff;
+  background: var(--card-bg);
   cursor: pointer;
 }
 
@@ -256,12 +301,12 @@ h3 {
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  color: #fff;
-  background: var(--blue);
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 .btn-secondary {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--text);
   border: 1px solid var(--border);
 }
@@ -274,10 +319,11 @@ h3 {
 
 .btn-green {
   background: var(--green);
+  color: #fff;
 }
 
 .btn-danger {
-  background: #fff;
+  background: var(--card-bg);
   color: var(--red);
   border: 1px solid var(--red);
 }
@@ -291,7 +337,7 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
-  background: #fff;
+  background: var(--card-bg);
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
@@ -299,9 +345,9 @@ h3 {
 }
 
 .watch-btn.active {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .warning-box {
@@ -326,15 +372,15 @@ h3 {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
-  background: #fff;
+  background: var(--card-bg);
   color: var(--text);
   cursor: pointer;
 }
 
 .day-chip.active {
-  background: var(--blue);
-  color: #fff;
-  border-color: var(--blue);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
 }
 
 .row-flex {
@@ -357,14 +403,14 @@ h3 {
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
-  background: #fff;
+  background: var(--card-bg);
   cursor: pointer;
 }
 
 .mode-tab.active {
-  background: var(--blue);
-  color: #fff;
-  border-color: var(--blue);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
 }
 
 .index-bar {
@@ -378,4 +424,31 @@ h3 {
 .index-number {
   font-size: 18px;
   font-weight: 700;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  background: var(--card-bg);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+
+.segmented button:last-child {
+  border-right: none;
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }

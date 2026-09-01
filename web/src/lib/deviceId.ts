@@ -4,6 +4,8 @@
 // migrations for how this is used server-side. (Ported from the mobile app's
 // AsyncStorage + expo-crypto version — same idea, browser-native storage.)
 
+import { randomUUID } from "./uuid";
+
 const STORAGE_KEY = "ruabsniper:deviceId";
 
 let cached: string | null = null;
@@ -17,7 +19,7 @@ export function getDeviceId(): string {
     return existing;
   }
 
-  const fresh = crypto.randomUUID();
+  const fresh = randomUUID();
   localStorage.setItem(STORAGE_KEY, fresh);
   cached = fresh;
   return fresh;

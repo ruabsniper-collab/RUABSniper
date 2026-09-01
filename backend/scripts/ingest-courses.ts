@@ -31,8 +31,33 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 async function ingestTerm(term: Term, campus = "NB") {
   console.log(`[ingest] fetching ${termLabel(term)} (${campus})...`);
-  const courses: SocCourse[] = await fetchCourses(term, campus);
-  console.log(`[ingest] ${termLabel(term)}: ${courses.length} courses from SOC`);
+  const rawCourses: SocCourse[] = await fetchCourses(term, campus);
+  console.log(`[ingest] ${termLabel(term)}: ${rawCourses.length} courses from SOC`);
+
+  // SOC sometimes lists the same subject+courseNumber more than once (seen
+  // live on Fall 2026 — cross-listings/data quirks, not something we can
+  // control). Our `courses` table is unique on (term, campus, subject,
+  // course_number), and Postgres's upsert can't touch the same conflict key
+  // twice in one statement ("ON CONFLICT DO UPDATE command cannot affect row
+  // a second time") -- so merge duplicates here instead of crashing the
+  // whole ingest. Keeps the first listing's descriptive fields and unions
+  // every duplicate's sections so no section data is silently dropped.
+  const byKey = new Map<string, SocCourse[]>();
+  for (const c of rawCourses) {
+    const key = `${c.subject}::${c.courseNumber}`;
+    const group = byKey.get(key);
+    if (group) group.push(c);
+    else byKey.set(key, [c]);
+  }
+  const courses = [...byKey.values()].map((group) => ({
+    ...group[0],
+    sections: group.flatMap((c) => c.sections ?? []),
+  }));
+  if (courses.length !== rawCourses.length) {
+    console.log(
+      `[ingest] ${termLabel(term)}: merged ${rawCourses.length} SOC listings into ${courses.length} unique courses`,
+    );
+  }
 
   const courseRows = courses.map((c) => ({
     term_year: term.year,
@@ -61,13 +86,19 @@ async function ingestTerm(term: Term, campus = "NB") {
   }
   console.log(`[ingest] ${termLabel(term)}: upserted ${courseRows.length} courses`);
 
-  const sectionRows: Record<string, unknown>[] = [];
+  // index_number is unique per term (it's WebReg's own quick-add key), but a
+  // cross-listed section can appear under more than one subject/courseNumber
+  // listing sharing that same index — same "can't upsert the same conflict
+  // key twice in one batch" problem as courses above, so dedupe here too.
+  // First occurrence wins; cross-listed dupes describe the same physical
+  // section, so there's nothing meaningful to merge.
+  const sectionByIndex = new Map<string, Record<string, unknown>>();
   for (const c of courses) {
     const courseId = idByKey.get(`${c.subject}::${c.courseNumber}`);
     if (!courseId) continue; // shouldn't happen, but don't crash the whole run over it
     for (const s of c.sections ?? []) {
-      if (!s.index) continue;
-      sectionRows.push({
+      if (!s.index || sectionByIndex.has(String(s.index))) continue;
+      sectionByIndex.set(String(s.index), {
         course_id: courseId,
         term_year: term.year,
         term_code: term.code,
@@ -89,6 +120,7 @@ async function ingestTerm(term: Term, campus = "NB") {
       });
     }
   }
+  const sectionRows = [...sectionByIndex.values()];
 
   for (const batch of chunk(sectionRows, 500)) {
     const { error } = await supabaseAdmin

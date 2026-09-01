@@ -115,11 +115,15 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         printout. Text recognition is best-effort, so review every row below before adding anything.
       </p>
 
+      {/* No `capture` attribute on purpose — that forces mobile browsers
+          straight to the camera, but this is for picking an *existing*
+          screenshot (from the photo library/Files), not taking a new photo.
+          Leaving it off lets the browser show its normal picker (Photos /
+          Camera / Files on iOS, Photos / Camera / Files on Android) instead. */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         style={{ display: "none" }}
         onChange={onFileChosen}
       />

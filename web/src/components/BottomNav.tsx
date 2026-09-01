@@ -10,7 +10,7 @@ export function BottomNav() {
       <NavLink to="/" end>
         Search
       </NavLink>
-      <NavLink to="/watches">Watches</NavLink>
+      <NavLink to="/watches">Snipes</NavLink>
       <NavLink to="/schedule">My Schedule</NavLink>
       <NavLink to="/settings">Settings</NavLink>
     </nav>

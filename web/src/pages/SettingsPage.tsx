@@ -1,21 +1,34 @@
 import { useEffect, useState } from "react";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "../lib/push";
+import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 
 const STATUS_COPY: Record<PushStatus, string> = {
   unsupported: "This browser doesn't support push notifications.",
   denied: "Notifications are blocked for this site — re-enable them in your browser's site settings.",
   unsubscribed: "Not enabled yet.",
-  subscribed: "Enabled — you'll get a real push the moment a watched section opens.",
+  subscribed: "Enabled — you'll get a real push the moment a sniped section opens.",
 };
+
+const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
 
 export function SettingsPage() {
   const [status, setStatus] = useState<PushStatus | "checking">("checking");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [theme, setThemeState] = useState<ThemePref>(getTheme());
 
   useEffect(() => {
     getPushStatus().then(setStatus);
   }, []);
+
+  function handleThemeChange(pref: ThemePref) {
+    setTheme(pref);
+    setThemeState(pref);
+  }
 
   async function handleEnable() {
     setBusy(true);
@@ -46,6 +59,22 @@ export function SettingsPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="card">
+        <h3>Appearance</h3>
+        <p className="hint">"System" follows your phone/browser's own light or dark setting.</p>
+        <div className="segmented" style={{ marginTop: 8 }}>
+          {THEME_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={theme === opt.value ? "active" : ""}
+              onClick={() => handleThemeChange(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
         <h3>Seat-open notifications</h3>
         <p className="hint">{status === "checking" ? "Checking…" : STATUS_COPY[status]}</p>
         {error && <p className="error-text">{error}</p>}
@@ -69,7 +98,7 @@ export function SettingsPage() {
         <h3>What this app stores</h3>
         <p className="hint">
           No Rutgers account, no NetID, no password — ever. A random id for this browser is used only to
-          remember what you're watching and where to send notifications. Your "My Schedule" list stays on
+          remember what you're sniping and where to send notifications. Your "My Schedule" list stays on
           this device only.
         </p>
       </div>

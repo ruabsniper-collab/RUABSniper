@@ -51,7 +51,7 @@ export function SectionRow({
               onToggleWatch();
             }}
           >
-            {isWatched ? "Watching" : "Notify me"}
+            {isWatched ? "Sniped" : "Notify me"}
           </button>
         )}
       </div>

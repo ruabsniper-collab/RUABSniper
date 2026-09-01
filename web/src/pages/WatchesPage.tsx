@@ -14,7 +14,7 @@ export function WatchesPage() {
     try {
       setWatches(await listWatches());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load watches");
+      setError(e instanceof Error ? e.message : "Couldn't load snipes");
     } finally {
       setLoading(false);
     }
@@ -34,7 +34,7 @@ export function WatchesPage() {
             <p className="meta">{termLabel({ year: item.term_year, code: item.term_code })}</p>
             <p style={{ fontWeight: 700, fontSize: 15 }}>Index {item.index_number}</p>
             <p className="meta">
-              {item.last_status ? "Currently open" : "Currently closed — watching for an opening"}
+              {item.last_status ? "Currently open" : "Currently closed — waiting to snipe it"}
             </p>
           </div>
           <button
@@ -44,13 +44,13 @@ export function WatchesPage() {
               refresh();
             }}
           >
-            Stop watching
+            Stop sniping
           </button>
         </div>
       ))}
       {!loading && watches.length === 0 && (
         <p className="empty-text">
-          Nothing watched yet. Find a closed section in Search and tap "Notify me" to get a push the moment
+          Nothing sniped yet. Find a closed section in Search and tap "Notify me" to get a push the moment
           a seat opens.
         </p>
       )}
