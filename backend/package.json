@@ -7,6 +7,7 @@
     "ingest-courses": "tsx scripts/ingest-courses.ts",
     "match-professors": "tsx scripts/match-professors.ts",
     "poll-and-notify": "tsx scripts/poll-and-notify.ts",
+    "poll-worker": "tsx scripts/poll-worker.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

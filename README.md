@@ -57,19 +57,58 @@ This only powers the "Import from screenshot" option on the My Schedule tab — 
 shows an error, everything else in the app still works. Manually adding your existing classes (the other
 option on that tab) needs no setup at all.
 
-### 4. GitHub Actions secrets — the always-on poller
+### 4. The open-seat poller — two layers, fast path + fallback
 
-In this repo's GitHub Settings → Secrets and variables → Actions, add:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `VAPID_PUBLIC_KEY`
-- `VAPID_PRIVATE_KEY`
-- `VAPID_SUBJECT`
+Notification speed is entirely about how often something checks the Schedule of Classes for you — the
+actual work per check is well under a second. Two things check it, for two different reasons:
 
-That's it — [`poll-and-notify.yml`](.github/workflows/poll-and-notify.yml) runs every 5 minutes,
-[`ingest-courses.yml`](.github/workflows/ingest-courses.yml) every 6 hours, and
-[`match-professors.yml`](.github/workflows/match-professors.yml) nightly, all for free on GitHub's
-scheduled Actions minutes.
+**Fast path (primary): a free always-on VM polling every ~2-3 seconds.** No free *triggered* schedule
+(GitHub Actions, cron-job.org, Cloudflare Cron Triggers) goes below a 1-minute floor — verified, not
+assumed. Getting real single-digit-second latency needs a process that loops on its own timer instead of
+waiting to be triggered, which needs somewhere that stays on. Google Cloud's free-forever `e2-micro` tier
+is the one used here:
+
+1. Create a project at [console.cloud.google.com](https://console.cloud.google.com) (needs a card on file
+   for identity verification — you won't be charged unless you manually upgrade the account).
+2. Compute Engine → Create Instance → machine type `e2-micro`, region `us-west1`, `us-central1`, or
+   `us-east1` (the three free-tier-eligible regions), any Debian/Ubuntu image. Leave the rest default.
+3. SSH in (the Cloud Console has a built-in SSH button, no key setup needed) and install Node 22 via
+   [NodeSource's setup script](https://github.com/nodesource/distributions) — this, rather than `nvm`,
+   puts a real `/usr/bin/node`/`/usr/bin/npm` on the system, which the systemd service below needs (systemd
+   doesn't see a per-user shell's PATH).
+4. `git clone` this repo, `cd RUABSniper/backend && npm ci`, then create `backend/.env` (copy from
+   `backend/.env.example`) with the same `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `VAPID_*` values
+   already in your local `backend/.env`.
+5. Edit the two placeholder paths in [`backend/deploy/poll-worker.service`](backend/deploy/poll-worker.service)
+   to match your username (`whoami`) and where you cloned the repo, then follow the install steps at the
+   top of that file. `sudo journalctl -u poll-worker -f` should show it polling.
+
+**Fallback (baseline, ~60s latency): Vercel + a free cron-ping.** Kept running alongside the VM on
+purpose — if the VM ever has downtime (reboot, host maintenance, a connectivity blip), this still catches
+every opening within a minute instead of a silent gap. Both write to the same `watches.last_status`
+column with the same closed→open check, so running both is safe: whichever notices a change first wins,
+the other just sees it already flipped and skips.
+
+1. Deploy `web/` to Vercel (see step 5 below) — [`web/api/poll.ts`](web/api/poll.ts) ships with it as a
+   serverless function automatically.
+2. On the Vercel project → Settings → Environment Variables, add (as plain variables, **not** prefixed
+   `VITE_`, so they stay server-only): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PUBLIC_KEY`,
+   `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, and a `POLL_SECRET` you make up (any random string — it's a
+   shared secret so randos can't trigger your poller by guessing the URL). Add each one individually,
+   not pasted in bulk — a bulk paste has corrupted a value here before.
+3. At [cron-job.org](https://cron-job.org) (free, no card), create a job hitting
+   `https://<your-domain>/api/poll?secret=<POLL_SECRET>` every 1 minute (its free-tier floor).
+
+There's also [`poll-and-notify.yml`](.github/workflows/poll-and-notify.yml), the original GitHub Actions
+version — kept around as a manual-trigger-only emergency button (`workflow_dispatch` in the Actions tab)
+using the same 5 secrets, in case both the above are ever down at once. GitHub's free-tier scheduler was
+verified landing runs 9-21 minutes apart under its runner queue, which is why it's not the primary path
+and not on a schedule anymore.
+
+[`ingest-courses.yml`](.github/workflows/ingest-courses.yml) (every 6 hours) and
+[`match-professors.yml`](.github/workflows/match-professors.yml) (nightly) are unaffected by any of this —
+add the same 5 secrets to GitHub Settings → Secrets and variables → Actions and those two keep running for
+free on GitHub's scheduled Actions minutes as before.
 
 ### 5. Putting it online for friends to use — any free static host
 
@@ -98,13 +137,16 @@ Backend scripts can also be run by hand while developing (they need `backend/.en
 cd backend
 npm run ingest-courses      # pull the current SOC catalog into Supabase
 npm run match-professors    # fuzzy-match instructors against RateMyProfessors
-npm run poll-and-notify     # check watched sections and push-notify on openings
+npm run poll-and-notify     # check watched sections once and push-notify on openings
+npm run poll-worker         # same, but loops forever every ~2-3s -- what actually runs on the VM
 ```
 
 ## Known limitations (see the plan for why)
 
-- **Notification latency**: GitHub Actions' cron floor is 5 minutes and can slip further under load — this
-  is "notify me it opened," not sub-minute sniping.
+- **Notification latency**: with the fast-path VM worker running (see setup step 4), a few seconds; with
+  only the Vercel + cron-job.org fallback running, up to ~60 seconds. Either way it depends on Rutgers'
+  SOC API not rate-limiting or blocking the polling IP if you push the VM worker's interval much faster
+  than its current ~2-3 seconds.
 - **iOS push needs "Add to Home Screen" first**: a regular Safari tab can't receive push notifications on
   iPhone (iOS 16.4+) — installing the site as a home-screen app is what enables it. Every other feature
   works the same with or without that step.
