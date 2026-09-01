@@ -15,6 +15,7 @@ import { searchProfessors, pickBestMatch, profileUrl, splitSocName } from "../li
 const MAX_PER_RUN = 400; // keep each run reasonably short; nightly cron catches the rest
 const RE_MATCH_AFTER_DAYS = 14;
 const REQUEST_DELAY_MS = 250; // be polite to RMP's endpoint
+const REQUEST_TIMEOUT_MS = 20_000; // see the comment on the upsert() call below
 
 function normalizeName(raw: string): string {
   return raw.trim().toLowerCase();
@@ -31,7 +32,8 @@ async function distinctInstructorNames(): Promise<string[]> {
     const { data, error } = await supabaseAdmin
       .from("sections")
       .select("instructors")
-      .range(from, from + pageSize - 1);
+      .range(from, from + pageSize - 1)
+      .abortSignal(AbortSignal.timeout(REQUEST_TIMEOUT_MS));
     if (error) throw error;
     if (!data || data.length === 0) break;
     for (const row of data) {
@@ -62,7 +64,8 @@ async function alreadyFreshNames(): Promise<Set<string>> {
       .from("professor_rmp_matches")
       .select("instructor_name")
       .gte("updated_at", cutoff)
-      .range(from, from + pageSize - 1);
+      .range(from, from + pageSize - 1)
+      .abortSignal(AbortSignal.timeout(REQUEST_TIMEOUT_MS));
     if (error) throw error;
     if (!data || data.length === 0) break;
     for (const row of data) names.add(row.instructor_name as string);
@@ -121,7 +124,11 @@ async function main() {
           updated_at: new Date().toISOString(),
         },
         { onConflict: "instructor_name" },
-      );
+      )
+        // Same reasoning as searchProfessors()'s timeout: a hung connection
+        // here would stall the whole run just as badly, just on the write
+        // side instead of the search side.
+        .abortSignal(AbortSignal.timeout(REQUEST_TIMEOUT_MS));
       if (error) throw error;
 
       if (result.method === "none") unmatched++;

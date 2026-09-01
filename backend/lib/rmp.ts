@@ -51,10 +51,18 @@ const SEARCH_QUERY = `
   }
 `;
 
+const REQUEST_TIMEOUT_MS = 20_000;
+
 export async function searchProfessors(
   nameText: string,
   schoolNumericId = RUTGERS_RMP_SCHOOL_ID,
 ): Promise<RmpCandidate[]> {
+  // Without a timeout, a fetch whose underlying connection dies silently
+  // (e.g. the laptop running match-professors.ts sleeps mid-request) never
+  // resolves or rejects — the whole batch run hangs forever on that one
+  // await, indistinguishable from "still working" until someone notices no
+  // progress is being made. Verified live: a 12-run reprocessing job sat at
+  // "running" with zero new output for 7 hours after a lid-close.
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
@@ -65,6 +73,7 @@ export async function searchProfessors(
       query: SEARCH_QUERY,
       variables: { text: nameText, schoolID: schoolGraphId(schoolNumericId) },
     }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!res.ok) {
