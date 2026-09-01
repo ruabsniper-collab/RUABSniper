@@ -4,6 +4,15 @@
 // notification; no offline caching, since this app always wants fresh
 // course/seat data over a stale cache.
 
+// Without these, a browser's default service worker lifecycle leaves a new
+// sw.js "waiting" until every open tab of the old one is fully closed
+// before it activates -- meaning a fix shipped here might not actually take
+// effect for someone with the PWA already open until they close and reopen
+// it. skipWaiting + clients.claim make a newly-deployed worker take over
+// immediately instead.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+
 self.addEventListener("push", (event) => {
   let data = { title: "RUAB Sniper", body: "A watched section changed.", url: "/watches" };
   try {
