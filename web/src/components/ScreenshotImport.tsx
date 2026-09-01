@@ -1,0 +1,212 @@
+import { useRef, useState } from "react";
+import { addScheduleBlock } from "../lib/schedule";
+import { runScheduleOcr, parseScheduleText, type ScheduleBlockDraft } from "../lib/scheduleOcr";
+import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
+
+const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
+
+type DraftRow = {
+  label: string;
+  day: string;
+  startText: string;
+  endText: string;
+  included: boolean;
+  sourceLine: string;
+};
+
+function toDraftRow(d: ScheduleBlockDraft): DraftRow {
+  return {
+    label: d.label,
+    day: d.day,
+    startText: d.start ? formatMilitaryTime(d.start) : "",
+    endText: d.end ? formatMilitaryTime(d.end) : "",
+    included: true,
+    sourceLine: d.sourceLine,
+  };
+}
+
+/** Reads a File as a base64 JPEG payload (no "data:" prefix) for runScheduleOcr. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Couldn't read that image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * "Import from screenshot": pick a photo, OCR it (see lib/scheduleOcr.ts),
+ * then show every guessed class as an editable row so nothing gets added
+ * to My Schedule without the user looking at it first.
+ */
+export function ScreenshotImport({ onImported }: { onImported: () => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [rawText, setRawText] = useState("");
+  const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [skippedMsg, setSkippedMsg] = useState<string | null>(null);
+
+  async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImageUrl(URL.createObjectURL(file));
+    setStatus("scanning");
+    setError(null);
+    setSkippedMsg(null);
+    setDrafts([]);
+    setRawText("");
+
+    try {
+      const base64 = await fileToBase64(file);
+      const text = await runScheduleOcr(base64);
+      setRawText(text);
+      setDrafts(parseScheduleText(text).map(toDraftRow));
+      setStatus("done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scan failed");
+      setStatus("error");
+    }
+  }
+
+  function updateDraft(index: number, patch: Partial<DraftRow>) {
+    setDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
+  }
+
+  function removeDraft(index: number) {
+    setDrafts((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function commitSelected() {
+    const included = drafts.filter((d) => d.included);
+    let added = 0;
+    let skipped = 0;
+    for (const d of included) {
+      const start = parseTimeToMilitary(d.startText);
+      const end = parseTimeToMilitary(d.endText);
+      if (!start || !end || !d.label.trim()) {
+        skipped += 1;
+        continue;
+      }
+      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end });
+      added += 1;
+    }
+    setSkippedMsg(
+      skipped > 0
+        ? `Added ${added}, skipped ${skipped} (couldn't read a time like "3:50 PM" — fix and retry, or add manually).`
+        : null,
+    );
+    if (added > 0) onImported();
+    setDrafts((prev) => prev.filter((d) => !d.included)); // keep unselected/failed rows to retry
+  }
+
+  const includedCount = drafts.filter((d) => d.included).length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <p className="hint">
+        Pick a screenshot of your schedule — WebReg, Schedule Planner, a calendar app, even a photo of a
+        printout. Text recognition is best-effort, so review every row below before adding anything.
+      </p>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: "none" }}
+        onChange={onFileChosen}
+      />
+      <button className="btn" onClick={() => fileInputRef.current?.click()}>
+        {imageUrl ? "Choose a different screenshot" : "Choose screenshot"}
+      </button>
+
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt="Schedule screenshot preview"
+          style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 8, background: "#eaeef2" }}
+        />
+      )}
+
+      {status === "scanning" && <p className="hint">Reading text off the image…</p>}
+      {error && <p className="error-text">{error}</p>}
+      {skippedMsg && <p className="warning-box">{skippedMsg}</p>}
+
+      {status === "done" && drafts.length === 0 && !error && (
+        <div>
+          <p className="warning-box">
+            Couldn't find any "day + time" patterns in that image. Raw text it read is below — use Manual
+            entry if this isn't useful.
+          </p>
+          {rawText ? (
+            <pre style={{ maxHeight: 120, overflow: "auto", background: "#f6f8fa", borderRadius: 6, padding: 8, fontSize: 11 }}>
+              {rawText}
+            </pre>
+          ) : null}
+        </div>
+      )}
+
+      {drafts.map((d, i) => (
+        <div key={i} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="row-flex" style={{ alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={d.included}
+              onChange={(e) => updateDraft(i, { included: e.target.checked })}
+            />
+            <input
+              className="input"
+              style={{ flex: 1, fontWeight: 600 }}
+              value={d.label}
+              onChange={(e) => updateDraft(i, { label: e.target.value })}
+            />
+            <button className="btn-danger btn btn-small" onClick={() => removeDraft(i)}>
+              ✕
+            </button>
+          </div>
+          <p className="meta" style={{ fontStyle: "italic" }}>
+            from: "{d.sourceLine}"
+          </p>
+          <div className="row-flex">
+            {DAYS.map((day) => (
+              <button
+                key={day}
+                className={`day-chip ${d.day === day ? "active" : ""}`}
+                onClick={() => updateDraft(i, { day })}
+              >
+                {DAY_LABELS[day]}
+              </button>
+            ))}
+          </div>
+          <div className="row-flex">
+            <input
+              className="input"
+              placeholder="Start, e.g. 3:50 PM"
+              value={d.startText}
+              onChange={(e) => updateDraft(i, { startText: e.target.value })}
+            />
+            <input
+              className="input"
+              placeholder="End, e.g. 5:10 PM"
+              value={d.endText}
+              onChange={(e) => updateDraft(i, { endText: e.target.value })}
+            />
+          </div>
+        </div>
+      ))}
+
+      {drafts.length > 0 && (
+        <button className="btn btn-green" onClick={commitSelected} disabled={includedCount === 0}>
+          Add {includedCount} class{includedCount === 1 ? "" : "es"} to my schedule
+        </button>
+      )}
+    </div>
+  );
+}

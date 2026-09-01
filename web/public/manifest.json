@@ -1,0 +1,14 @@
+{
+  "name": "RU Course Sniper",
+  "short_name": "CourseSniper",
+  "description": "Rutgers course search, RateMyProfessors ratings, and open-seat notifications.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fa",
+  "theme_color": "#0969da",
+  "icons": [
+    { "src": "/icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

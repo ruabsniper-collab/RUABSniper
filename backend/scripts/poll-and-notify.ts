@@ -1,6 +1,6 @@
 // The core "sniper" job: checks every watched section's open/closed status
-// and emails a summary the moment one flips closed -> open. (Email, not a
-// real push — see backend/lib/resendEmail.ts for why.)
+// and sends a real Web Push notification the moment one flips closed -> open,
+// straight to the device that owns that watch (see backend/lib/webPush.ts).
 //
 // Run manually: `npm run poll-and-notify`
 // Run in CI: .github/workflows/poll-and-notify.yml (every 5 min, GitHub
@@ -9,7 +9,7 @@
 import "dotenv/config";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { fetchOpenIndexes } from "../lib/soc.js";
-import { sendNotificationEmail } from "../lib/resendEmail.js";
+import { sendPushToDevice } from "../lib/webPush.js";
 import { termKey, termLabel, type Term } from "../lib/term.js";
 
 type WatchRow = {
@@ -66,7 +66,6 @@ async function main() {
     }
   }
 
-  const newlyOpenedLabels: string[] = [];
   let opened = 0;
   let closedAgain = 0;
 
@@ -78,11 +77,18 @@ async function main() {
     const isOpenNow = openSet.has(w.index_number);
 
     if (isOpenNow && !w.last_status) {
-      // closed -> open: queue it for this run's notification email.
+      // closed -> open: notify just this watch's device, right away — no
+      // more batching into one end-of-run email to one fixed address, since
+      // different devices can (and, once shared with friends, will) own
+      // different watches.
       opened++;
       const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-      console.log(`[poll] OPENED: ${label}`);
-      newlyOpenedLabels.push(label);
+      console.log(`[poll] OPENED: ${label} (device ${w.device_id})`);
+      await sendPushToDevice(w.device_id, {
+        title: "A seat opened up!",
+        body: label,
+        url: "/watches",
+      });
       await supabaseAdmin
         .from("watches")
         .update({ last_status: true, notified_at: new Date().toISOString() })
@@ -92,17 +98,6 @@ async function main() {
       closedAgain++;
       await supabaseAdmin.from("watches").update({ last_status: false, notified_at: null }).eq("id", w.id);
     }
-  }
-
-  if (newlyOpenedLabels.length > 0) {
-    const subject =
-      newlyOpenedLabels.length === 1
-        ? `A seat opened up: ${newlyOpenedLabels[0]}`
-        : `${newlyOpenedLabels.length} watched sections opened up`;
-    const html = `<p>Seat(s) just opened:</p><ul>${newlyOpenedLabels
-      .map((l) => `<li>${l}</li>`)
-      .join("")}</ul><p>Go register before it closes again.</p>`;
-    await sendNotificationEmail(subject, html);
   }
 
   console.log(`[poll] done: ${opened} newly opened, ${closedAgain} closed again, ${watches.length} watches checked`);
