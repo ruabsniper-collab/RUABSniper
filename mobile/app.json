@@ -10,6 +10,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.example.ruabsniper"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used to import a screenshot of your schedule so its times can be read automatically."
+        }
+      ]
+    ],
     "android": {
       "package": "com.example.ruabsniper",
       "adaptiveIcon": {

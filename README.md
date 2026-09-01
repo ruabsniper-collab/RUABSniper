@@ -2,8 +2,8 @@
 
 A personal Rutgers registration helper: search the Schedule of Classes by name/subject/core code, see
 best-effort RateMyProfessors ratings and filter by them, filter out sections that conflict with a schedule
-you already have, get emailed the moment a full section opens a seat, and jump straight into WebReg with
-the index number already filled in.
+you already have (added by hand or imported from a screenshot), get emailed the moment a full section opens
+a seat, and jump straight into WebReg with the index number already filled in.
 
 **No paid Apple account anywhere.** Real APNs push notifications and EAS/App Store builds both require the
 $99/yr Apple Developer Program, so this project avoids both: notifications go out by email instead (your
@@ -43,7 +43,17 @@ backend/   Node/TypeScript scripts: SOC ingest, RMP matching, the open-seat poll
    address your account is registered under — which is exactly what we want here).
 2. Grab an API key from the dashboard.
 
-### 3. GitHub Actions secrets — the always-on poller
+### 3. OCR.space (free) — screenshot schedule import
+
+1. Sign up for a free key at [ocr.space/ocrapi/freekey](https://ocr.space/ocrapi/freekey) — no credit card,
+   25k requests/month.
+2. Put it in `mobile/.env` as `EXPO_PUBLIC_OCR_SPACE_API_KEY` (copy from `mobile/.env.example`).
+
+This only powers the "Import from screenshot" option on the My Schedule tab — skip it and that one button
+shows an error, everything else in the app still works. Manually adding your existing classes (the other
+option on that tab) needs no setup at all.
+
+### 4. GitHub Actions secrets — the always-on poller
 
 In this repo's GitHub Settings → Secrets and variables → Actions, add:
 - `SUPABASE_URL`
@@ -56,7 +66,7 @@ That's it — [`poll-and-notify.yml`](.github/workflows/poll-and-notify.yml) run
 [`match-professors.yml`](.github/workflows/match-professors.yml) nightly, all for free on GitHub's
 scheduled Actions minutes.
 
-### 4. Installing the app on your iPhone — SideStore, no Apple account cost
+### 5. Installing the app on your iPhone — SideStore, no Apple account cost
 
 1. Set up [SideStore](https://docs.sidestore.io) on your iPhone (one-time pairing with a computer — any OS
    works for this part, it doesn't need to be a Mac).
@@ -101,6 +111,10 @@ npm run poll-and-notify     # check watched sections and email on openings
   is "notify me it opened," not sub-minute sniping.
 - **RateMyProfessors matching is best-effort**: no official API exists; matches carry a confidence score
   and low-confidence ones are labeled "unrated" rather than guessed at.
+- **Screenshot schedule import is best-effort**: [`scheduleOcr.ts`](mobile/src/lib/scheduleOcr.ts) OCRs the
+  image and pattern-matches "day + time" text, but every guess (label, day, start/end) shows up as an
+  editable row — see [`ScreenshotImport.tsx`](mobile/src/components/ScreenshotImport.tsx) — so nothing gets
+  saved to My Schedule without a look first. If nothing gets recognized, add the class manually instead.
 - **WebReg index auto-fill is best-effort**: WebReg's page isn't documented and this project has never been
   able to inspect its authenticated DOM directly. If the auto-fill doesn't find the box, the Register screen
   falls back to a one-tap "copy index" button.
