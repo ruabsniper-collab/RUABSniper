@@ -10,7 +10,7 @@
 
 import "dotenv/config";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
-import { searchProfessors, pickBestMatch, profileUrl } from "../lib/rmp.js";
+import { searchProfessors, pickBestMatch, profileUrl, splitSocName } from "../lib/rmp.js";
 
 const MAX_PER_RUN = 400; // keep each run reasonably short; nightly cron catches the rest
 const RE_MATCH_AFTER_DAYS = 14;
@@ -85,9 +85,16 @@ async function main() {
 
   for (const socName of pending) {
     try {
-      // socName is normalized (lowercase). RMP search is case-insensitive
-      // in practice, but candidates still carry their real-cased names.
-      const candidates = await searchProfessors(socName);
+      // RMP's search endpoint returns noticeably worse (often just wrong)
+      // results for SOC's "Last, First" order than for natural "First
+      // Last" order -- verified live: searching "hughes, david" surfaced
+      // ten unrelated Davids and never the real match, while "david
+      // hughes" put him first. So reformat before searching; pickBestMatch
+      // still scores against the original socName/split, only the text
+      // sent to RMP changes.
+      const { first, last } = splitSocName(socName);
+      const queryText = first ? `${first} ${last}` : last;
+      const candidates = await searchProfessors(queryText);
       const result = pickBestMatch(socName, candidates);
 
       // Checking `error` here matters: without it, a failed write (a

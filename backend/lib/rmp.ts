@@ -115,6 +115,14 @@ export type MatchResult =
  * Fuzzy-matches a SOC instructor name against RMP search results.
  * Gate: last name must be reasonably close (>= 0.6) before a first-name/full
  * -name score is trusted — avoids matching "J. Smith" to an unrelated Smith.
+ *
+ * When SOC gives no first name at all (a bare last name, no comma — this
+ * happens for real, verified live against several Fall 2026 instructors
+ * like "NIKPOUR" and "DESORBO"), don't blend in a full-name comparison —
+ * `similarity(" nikpour", "fereydoun nikpour")` scores badly no matter how
+ * right the match is, since half the comparison is empty. Score on the last
+ * name alone instead, just held to a much higher bar than the 0.6 gate,
+ * since a bare surname is a weaker identifier than a full name.
  */
 export function pickBestMatch(socName: string, candidates: RmpCandidate[]): MatchResult {
   const { first, last } = splitSocName(socName);
@@ -124,9 +132,15 @@ export function pickBestMatch(socName: string, candidates: RmpCandidate[]): Matc
   for (const c of candidates) {
     const lastSim = similarity(last, c.lastName ?? "");
     if (lastSim < 0.6) continue;
-    const fullSim = similarity(`${first} ${last}`, `${c.firstName ?? ""} ${c.lastName ?? ""}`);
-    const score = lastSim * 0.4 + fullSim * 0.6;
-    if (!best || score > best.score) best = { score, candidate: c };
+    const score = first
+      ? lastSim * 0.4 + similarity(`${first} ${last}`, `${c.firstName ?? ""} ${c.lastName ?? ""}`) * 0.6
+      : lastSim;
+    // Tie-break toward the more-reviewed profile — RMP sometimes has a
+    // second, all-zero "ghost" entry for the same real person (seen live:
+    // Fereydoun Nikpour has one with 71 ratings and one with 0).
+    if (!best || score > best.score || (score === best.score && (c.numRatings ?? 0) > (best.candidate.numRatings ?? 0))) {
+      best = { score, candidate: c };
+    }
   }
 
   if (!best) return { method: "none", confidence: 0, candidate: null };
