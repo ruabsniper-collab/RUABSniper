@@ -95,6 +95,26 @@ export function SettingsPage() {
       </div>
 
       <div className="card">
+        <h3>One-click WebReg autofill</h3>
+        <p className="hint">
+          A free, optional browser extension for <strong>Chrome or Edge on a computer</strong> (not
+          available on iPhone/mobile Safari — Apple only allows extensions distributed through the paid
+          Developer Program, which this project avoids entirely) that fills the index number into WebReg's
+          quick-add box for you when you tap "Open WebReg." It never touches your NetID/password and never
+          clicks "ADD COURSES" for you — that stays your own deliberate click.
+        </p>
+        <a
+          className="btn btn-secondary"
+          style={{ display: "inline-block", marginTop: 8, textDecoration: "none" }}
+          href="https://github.com/ruabsniper-collab/RUABSniper/tree/master/extension"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Get the extension →
+        </a>
+      </div>
+
+      <div className="card">
         <h3>What this app stores</h3>
         <p className="hint">
           No Rutgers account, no NetID, no password — ever. A random id for this browser is used only to
