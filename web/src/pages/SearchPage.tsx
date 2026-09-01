@@ -4,7 +4,9 @@ import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, termLabel } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { loadMySchedule, type ScheduleBlock } from "../lib/schedule";
+import { maybePromptAfterAddingWatch } from "../lib/push";
 import { SectionRow } from "../components/SectionRow";
+import { NotificationPrompt } from "../components/NotificationPrompt";
 import type { SectionWithCourse } from "../types/db";
 
 const term = guessCurrentTerm();
@@ -80,13 +82,16 @@ export function SearchPage() {
     if (existingId) {
       await removeWatch(existingId);
     } else {
+      const hadNoWatchesBefore = (await listWatches()).length === 0;
       await addWatch(term, section.index_number, section.open);
+      await maybePromptAfterAddingWatch(hadNoWatchesBefore);
     }
     await refreshWatches();
   }
 
   return (
     <div>
+      <NotificationPrompt />
       <p className="hint">{termLabel(term)}</p>
       <input
         className="input"

@@ -88,3 +88,24 @@ export async function disablePush(): Promise<void> {
   await subscription?.unsubscribe();
   await supabase.from("push_subscriptions").delete().eq("device_id", getDeviceId());
 }
+
+/**
+ * Best-effort nudge for people who never noticed the Settings toggle or
+ * dismissed the NotificationPrompt banner: called right after a watch is
+ * added, it triggers the real permission prompt on the very first watch
+ * someone ever adds (the moment "get notified" first becomes concretely
+ * relevant), and does nothing on every watch after that. Never throws —
+ * this is a courtesy on top of adding the watch, not part of it, so a
+ * decline or an unsupported browser must never surface as an error on the
+ * primary action.
+ */
+export async function maybePromptAfterAddingWatch(hadNoWatchesBefore: boolean): Promise<void> {
+  if (!hadNoWatchesBefore) return;
+  try {
+    if ((await getPushStatus()) === "unsubscribed") await enablePush();
+  } catch {
+    // Declined, unsupported, or failed silently — same as if this function
+    // was never called. The Settings tab and NotificationPrompt banner
+    // remain available for anyone who wants to try again later.
+  }
+}

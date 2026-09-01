@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
+import { maybePromptAfterAddingWatch } from "../lib/push";
 import { SectionRow } from "../components/SectionRow";
 import type { SectionWithCourse } from "../types/db";
 import type { Term } from "../lib/term";
@@ -44,8 +45,13 @@ export function CourseDetailPage() {
 
   async function toggleWatch(section: SectionWithCourse) {
     const existingId = watchIdByIndex.get(section.index_number);
-    if (existingId) await removeWatch(existingId);
-    else await addWatch(term, section.index_number, section.open);
+    if (existingId) {
+      await removeWatch(existingId);
+    } else {
+      const hadNoWatchesBefore = (await listWatches()).length === 0;
+      await addWatch(term, section.index_number, section.open);
+      await maybePromptAfterAddingWatch(hadNoWatchesBefore);
+    }
     await refresh();
   }
 
