@@ -13,6 +13,7 @@ export type ScheduleBlockDraft = {
   start: string | null; // "HHMM" military, or null if the time couldn't be read
   end: string | null;
   sourceLine: string; // the OCR'd line this was guessed from, shown for review
+  dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image — see parseScheduleText
 };
 
 const OCR_ENDPOINT = "https://api.ocr.space/parse/image";
@@ -129,6 +130,21 @@ const TIME_RANGE_RE =
  * Scans OCR'd text line by line for "<label?> <day(s)> <start>-<end>"
  * patterns. Every field is a guess -- the review UI shows `sourceLine`
  * next to each one and lets the user fix or discard it before it's saved.
+ *
+ * That "<day(s)>" is only there at all for a schedule that's typed out as a
+ * list ("CS 111 MW 3:50-5:10"). WebReg's own Calendar view -- almost
+ * certainly the single most common screenshot people will actually upload,
+ * since it's the default schedule screen -- names each day exactly once, as
+ * a column header, never as text attached to an individual class block. OCR
+ * flattens that grid to plain text with no day anywhere near the time, so
+ * requiring a day match on the line used to mean these got silently
+ * dropped -- not shown as unparseable, not editable, just gone, with
+ * nothing in the UI to explain why a real class never showed up. Now a time
+ * range with no day on its line still becomes a draft, day defaulted to
+ * Monday and flagged `dayGuessed` (see ScreenshotImport.tsx, which leaves
+ * these unchecked by default so nothing gets silently added with a
+ * possibly-wrong day) -- the reviewer picks the real day from the same
+ * day-chip row every other draft already has.
  */
 export function parseScheduleText(text: string): ScheduleBlockDraft[] {
   const drafts: ScheduleBlockDraft[] = [];
@@ -140,20 +156,26 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
     const timeMatch = line.match(TIME_RANGE_RE);
     if (!timeMatch || timeMatch.index == null) continue;
 
-    const before = line.slice(0, timeMatch.index);
-    const dayRuns = [...before.matchAll(DAY_RUN_RE)];
-    if (dayRuns.length === 0) continue; // no day info on this line -- skip rather than guess wrong
-    const dayMatch = dayRuns[dayRuns.length - 1]; // the run closest to the time is the relevant one
-    const days = expandDayRun(dayMatch[0]);
-    if (days.length === 0 || dayMatch.index == null) continue;
-
-    const label = before.slice(0, dayMatch.index).trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
-
     const endRaw = timeMatch[2];
     const endPeriodMatch = endRaw.toUpperCase().match(/AM|PM/);
     const endPeriod = endPeriodMatch ? (endPeriodMatch[0] as "AM" | "PM") : undefined;
     const end = parseLooseTime(endRaw, endPeriod);
     const start = parseLooseTime(timeMatch[1], endPeriod);
+
+    const before = line.slice(0, timeMatch.index);
+    const dayRuns = [...before.matchAll(DAY_RUN_RE)];
+
+    if (dayRuns.length === 0) {
+      const label = before.trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
+      drafts.push({ label, day: "M", start, end, sourceLine: line, dayGuessed: true });
+      continue;
+    }
+
+    const dayMatch = dayRuns[dayRuns.length - 1]; // the run closest to the time is the relevant one
+    const days = expandDayRun(dayMatch[0]);
+    if (days.length === 0 || dayMatch.index == null) continue;
+
+    const label = before.slice(0, dayMatch.index).trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
 
     for (const day of days) {
       drafts.push({ label, day, start, end, sourceLine: line });

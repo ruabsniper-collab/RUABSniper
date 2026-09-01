@@ -12,6 +12,7 @@ type DraftRow = {
   endText: string;
   included: boolean;
   sourceLine: string;
+  dayGuessed: boolean;
 };
 
 function toDraftRow(d: ScheduleBlockDraft): DraftRow {
@@ -20,8 +21,14 @@ function toDraftRow(d: ScheduleBlockDraft): DraftRow {
     day: d.day,
     startText: d.start ? formatMilitaryTime(d.start) : "",
     endText: d.end ? formatMilitaryTime(d.end) : "",
-    included: true,
+    // A day guessed rather than read (see parseScheduleText — this is the
+    // normal case for a WebReg Calendar-view screenshot, where the day is
+    // only ever a column header, never text next to the class) starts
+    // unchecked, so nothing gets added to My Schedule on a possibly-wrong
+    // day just because the reviewer clicked "Add" without reading every row.
+    included: !d.dayGuessed,
     sourceLine: d.sourceLine,
+    dayGuessed: d.dayGuessed ?? false,
   };
 }
 
@@ -178,12 +185,19 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
           <p className="meta" style={{ fontStyle: "italic" }}>
             from: "{d.sourceLine}"
           </p>
+          {d.dayGuessed && (
+            <p className="warning-box">
+              Couldn't read a day for this one (common for a WebReg Calendar screenshot, where the day is
+              only shown once as a column header) — defaulted to Monday below. Pick the real day before
+              including it.
+            </p>
+          )}
           <div className="row-flex">
             {DAYS.map((day) => (
               <button
                 key={day}
                 className={`day-chip ${d.day === day ? "active" : ""}`}
-                onClick={() => updateDraft(i, { day })}
+                onClick={() => updateDraft(i, { day, dayGuessed: false })}
               >
                 {DAY_LABELS[day]}
               </button>
