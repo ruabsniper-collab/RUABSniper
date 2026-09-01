@@ -23,22 +23,37 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Focus an already-open tab if there is one, otherwise open a new one — this
-// is why the app's origin matters, not the specific path baked into `url`,
-// since most useful landings (Watches) are a single-page-app route anyway.
+// Every notification this app sends means "a seat just opened, go register"
+// (see backend/scripts/poll-and-notify.ts — it's the only sender), so
+// tapping it opens WebReg directly too, not just the app's own Register
+// page — no extra tap on that page's "Open WebReg" button needed. A page
+// can't pop a window open on its own (popup blockers everywhere, Safari
+// especially), but a service worker responding to an actual notification
+// tap is explicitly allowed to via clients.openWindow(), which is why this
+// happens here rather than as a useEffect on the Register page itself.
+const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || "/";
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ("focus" in client) {
-          client.postMessage({ type: "navigate", url: targetUrl });
-          return client.focus();
-        }
+    (async () => {
+      // Focus an already-open tab if there is one, otherwise open a new one
+      // — this is why the app's origin matters, not the specific path baked
+      // into `url`, since most useful landings (Register) are a
+      // single-page-app route anyway.
+      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const existing = clientList.find((c) => "focus" in c);
+      if (existing) {
+        existing.postMessage({ type: "navigate", url: targetUrl });
+        await existing.focus();
+      } else {
+        await self.clients.openWindow(targetUrl);
       }
-      return self.clients.openWindow(targetUrl);
-    }),
+      // Opened last so it ends up front-and-center — the actual next step
+      // is on WebReg's side, not ours.
+      await self.clients.openWindow(WEBREG_URL);
+    })(),
   );
 });
