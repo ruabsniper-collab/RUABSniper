@@ -14,6 +14,7 @@ export type ScheduleBlockDraft = {
   end: string | null;
   sourceLine: string; // the OCR'd line this was guessed from, shown for review
   dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image
+  courseKey?: string; // "subjectCode:courseNumber" read off a SOC-style course-code line, when one was found -- lets Search recognize "same course, different section" instead of a hard conflict
 };
 
 /** One OCR'd line with its pixel bounding box, reconstructed from OCR.space's word-level overlay data. */
@@ -246,10 +247,14 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
 
 // ---- Calendar-grid parsing (uses OCR word positions) -------------------------
 
-// SOC's own "subject:course:section:index" style code, e.g. "01:640:151:01:12932"
-// -- WebReg prints this under every class's title, so it's a reliable signal
-// that the title portion of a block has ended.
-const COURSE_CODE_RE = /^\d{2}:\d{3}:\d{3}/;
+// SOC's own "school:subject:course:section:index" style code, e.g.
+// "01:640:151:01:12932" -- WebReg prints this under every class's title, so
+// it's a reliable signal that the title portion of a block has ended. The
+// middle two groups (subject, course number) are the same identity SOC's
+// own courses table keys on -- capturing them lets a schedule block imported
+// this way be recognized as "the same course" as a section found in Search,
+// not just matched on time (see courseKey on ScheduleBlockDraft).
+const COURSE_CODE_RE = /^\d{2}:(\d{3}):(\d{3})/;
 // "(4.0)" credits, printed right after the code line.
 const CREDITS_RE = /^\(\d/;
 
@@ -313,6 +318,7 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
         ? Math.abs(headerRow[1].centerX - headerRow[0].centerX)
         : line.width * 2;
     const titleParts: string[] = [];
+    let courseKey: string | undefined;
     for (let j = i + 1; j < lines.length && titleParts.length < 3; j++) {
       const next = lines[j];
       // Same-row neighboring columns interleave in OCR's overall line order
@@ -327,7 +333,12 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
       if (!sameColumn) continue;
       const trimmed = next.text.trim();
       if (TIME_RANGE_RE.test(next.text)) break; // this column's own next class -- stop
-      if (COURSE_CODE_RE.test(trimmed) || CREDITS_RE.test(trimmed)) break; // this column's own code/credits line -- stop
+      const codeMatch = trimmed.match(COURSE_CODE_RE);
+      if (codeMatch) {
+        courseKey = `${codeMatch[1]}:${codeMatch[2]}`;
+        break;
+      }
+      if (CREDITS_RE.test(trimmed)) break; // this column's own credits line -- stop
       titleParts.push(trimmed);
     }
 
@@ -335,6 +346,7 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
       label: titleParts.join(" ").trim() || "Imported class",
       day,
       start,
+      courseKey,
       end,
       sourceLine: line.text,
     });

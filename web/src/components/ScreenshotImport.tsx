@@ -13,6 +13,7 @@ type DraftRow = {
   included: boolean;
   sourceLine: string;
   dayGuessed: boolean;
+  courseKey?: string;
 };
 
 function toDraftRow(d: ScheduleBlockDraft): DraftRow {
@@ -29,6 +30,7 @@ function toDraftRow(d: ScheduleBlockDraft): DraftRow {
     included: !d.dayGuessed,
     sourceLine: d.sourceLine,
     dayGuessed: d.dayGuessed ?? false,
+    courseKey: d.courseKey,
   };
 }
 
@@ -101,7 +103,7 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         skipped += 1;
         continue;
       }
-      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end });
+      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end, courseKey: d.courseKey });
       added += 1;
     }
     setSkippedMsg(

@@ -146,7 +146,10 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
   }
 
   if (filters.hideScheduleConflicts && filters.mySchedule?.length) {
-    sections = sections.filter((s) => !checkConflict(s.meeting_times, filters.mySchedule!));
+    sections = sections.filter((s) => {
+      const sectionCourseKey = `${s.courses.subject_code}:${s.courses.course_number}`;
+      return !checkConflict(s.meeting_times, filters.mySchedule!, sectionCourseKey);
+    });
   }
 
   if (filters.sortByRating) {

@@ -19,6 +19,12 @@ export type ScheduleBlock = {
   day: string; // M/T/W/H/F/S/U
   start: string; // 24h "HHMM"
   end: string; // 24h "HHMM"
+  // "subjectCode:courseNumber" -- only ever set on blocks imported from a
+  // screenshot where a real SOC course-code line was found (see
+  // scheduleOcr.ts). Lets checkConflict recognize "this is the same course
+  // as a section you're looking at," which should never count as a
+  // conflict -- you'd be replacing that registration, not adding to it.
+  courseKey?: string;
 };
 
 export type ScheduleSet = {
@@ -166,8 +172,21 @@ export function removeScheduleBlock(id: string): ScheduleBlock[] {
   return updated;
 }
 
-/** True if any of a section's meeting times overlaps any block in the given schedule. */
-export function checkConflict(meetingTimes: MeetingTime[], schedule: ScheduleBlock[]): boolean {
+/**
+ * True if any of a section's meeting times overlaps any block in the given
+ * schedule. `sectionCourseKey` ("subjectCode:courseNumber") skips any block
+ * that's the *same course* -- switching to a different section of a class
+ * you already have means dropping the old section anyway, so it was never
+ * really a conflict to begin with. Only takes effect for blocks that
+ * actually carry a courseKey (screenshot-imported ones -- see schedule.ts);
+ * manually-typed blocks have no structured course identity to compare, so
+ * they're checked as a plain time conflict same as always.
+ */
+export function checkConflict(
+  meetingTimes: MeetingTime[],
+  schedule: ScheduleBlock[],
+  sectionCourseKey?: string,
+): boolean {
   for (const mt of meetingTimes) {
     if (!mt.day) continue;
     const mtStart = militaryToMinutes(mt.start);
@@ -175,6 +194,7 @@ export function checkConflict(meetingTimes: MeetingTime[], schedule: ScheduleBlo
     if (mtStart == null || mtEnd == null) continue;
 
     for (const block of schedule) {
+      if (sectionCourseKey && block.courseKey && block.courseKey === sectionCourseKey) continue;
       if (block.day !== mt.day) continue;
       const bStart = militaryToMinutes(block.start);
       const bEnd = militaryToMinutes(block.end);
