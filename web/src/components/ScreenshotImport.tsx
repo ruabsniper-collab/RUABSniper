@@ -150,6 +150,16 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
       {error && <p className="error-text">{error}</p>}
       {skippedMsg && <p className="warning-box">{skippedMsg}</p>}
 
+      {/* Same action as the button below the review rows -- duplicated up
+          here so it's visible the moment scanning finishes, not just after
+          scrolling past every row. With a long schedule that button was
+          easy to miss entirely. */}
+      {drafts.length > 0 && (
+        <button className="btn btn-green" onClick={commitSelected} disabled={includedCount === 0}>
+          Add {includedCount} class{includedCount === 1 ? "" : "es"} to my schedule
+        </button>
+      )}
+
       {status === "done" && drafts.length === 0 && !error && (
         <div>
           <p className="warning-box">

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, termLabel } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
-import { loadMySchedule, type ScheduleBlock } from "../lib/schedule";
+import { getActiveSchedule, type ScheduleBlock } from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
 import { SectionRow } from "../components/SectionRow";
 import { NotificationPrompt } from "../components/NotificationPrompt";
@@ -23,6 +23,7 @@ export function SearchPage() {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [hideConflicts, setHideConflicts] = useState(false);
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
+  const [scheduleName, setScheduleName] = useState("");
   const [results, setResults] = useState<SectionWithCourse[]>([]);
   const [watchedIndexes, setWatchedIndexes] = useState<Set<string>>(new Set());
   const [watchIdByIndex, setWatchIdByIndex] = useState<Map<string, string>>(new Map());
@@ -43,7 +44,9 @@ export function SearchPage() {
   // not touching query/results state when you're not on this tab.
   useEffect(() => {
     if (pathname !== "/") return;
-    setMySchedule(loadMySchedule());
+    const active = getActiveSchedule();
+    setMySchedule(active.blocks);
+    setScheduleName(active.name);
     refreshWatches();
   }, [pathname, refreshWatches]);
 
@@ -131,7 +134,9 @@ export function SearchPage() {
       )}
 
       <label className="switch-row">
-        <span className="filter-label">Hide conflicts with My Schedule ({mySchedule.length} blocks)</span>
+        <span className="filter-label">
+          Hide conflicts with {scheduleName || "My Schedule"} ({mySchedule.length} blocks)
+        </span>
         <input type="checkbox" checked={hideConflicts} onChange={(e) => setHideConflicts(e.target.checked)} />
       </label>
 

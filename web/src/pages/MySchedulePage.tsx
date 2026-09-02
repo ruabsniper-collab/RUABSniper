@@ -1,12 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
-import { addScheduleBlock, loadMySchedule, removeScheduleBlock, type ScheduleBlock } from "../lib/schedule";
+import {
+  addScheduleBlock,
+  createSchedule,
+  deleteSchedule,
+  getActiveScheduleId,
+  listSchedules,
+  loadMySchedule,
+  removeScheduleBlock,
+  renameSchedule,
+  setActiveScheduleId,
+  type ScheduleBlock,
+  type ScheduleSet,
+} from "../lib/schedule";
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
 import { ScreenshotImport } from "../components/ScreenshotImport";
 
 const DAYS = ["M", "T", "W", "H", "F"];
 
 export function MySchedulePage() {
+  const [schedules, setSchedules] = useState<ScheduleSet[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
   const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const [addMode, setAddMode] = useState<"manual" | "screenshot">("manual");
   const [label, setLabel] = useState("");
   const [day, setDay] = useState("M");
@@ -15,6 +31,8 @@ export function MySchedulePage() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    setSchedules(listSchedules());
+    setActiveId(getActiveScheduleId());
     setBlocks(loadMySchedule());
   }, []);
 
@@ -22,14 +40,48 @@ export function MySchedulePage() {
     refresh();
   }, [refresh]);
 
+  const activeSchedule = schedules.find((s) => s.id === activeId);
+
+  function switchTo(id: string) {
+    setActiveScheduleId(id);
+    setRenaming(false);
+    refresh();
+  }
+
+  function handleNewSchedule() {
+    createSchedule();
+    setRenaming(false);
+    refresh();
+  }
+
+  function startRename() {
+    setRenameValue(activeSchedule?.name ?? "");
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    if (activeId) renameSchedule(activeId, renameValue);
+    setRenaming(false);
+    refresh();
+  }
+
+  function handleDeleteSchedule() {
+    if (!activeSchedule) return;
+    const label = activeSchedule.blocks.length > 0 ? ` and its ${activeSchedule.blocks.length} class(es)` : "";
+    if (!window.confirm(`Delete "${activeSchedule.name}"${label}? This can't be undone.`)) return;
+    deleteSchedule(activeId);
+    setRenaming(false);
+    refresh();
+  }
+
   function submit() {
     const startMilitary = parseTimeToMilitary(start);
     const endMilitary = parseTimeToMilitary(end);
     if (!label.trim()) return setError('Give it a name, e.g. "CS 111".');
     if (!startMilitary || !endMilitary) return setError('Use a time like "3:50 PM" or "15:50" for both fields.');
     setError(null);
-    const next = addScheduleBlock({ label: label.trim(), day, start: startMilitary, end: endMilitary });
-    setBlocks(next);
+    addScheduleBlock({ label: label.trim(), day, start: startMilitary, end: endMilitary });
+    refresh();
     setLabel("");
     setStart("");
     setEnd("");
@@ -38,26 +90,72 @@ export function MySchedulePage() {
   return (
     <div>
       <p className="hint">
-        Add the classes you're already registered for so Search can hide anything that overlaps.
+        Add the classes you're already registered for so Search can hide anything that overlaps. Keep
+        separate schedules for separate people — e.g. your own classes plus a friend's you're sniping for.
       </p>
 
-      {blocks.map((item) => (
-        <div key={item.id} className="card card-row">
-          <div style={{ flex: 1 }}>
-            <p style={{ fontWeight: 700, fontSize: 14 }}>{item.label}</p>
-            <p className="meta">
-              {DAY_LABELS[item.day]} {formatMilitaryTime(item.start)} – {formatMilitaryTime(item.end)}
-            </p>
-          </div>
+      <div className="row-flex" style={{ flexWrap: "wrap", marginTop: 10 }}>
+        {schedules.map((s) => (
           <button
-            className="btn btn-danger btn-small"
-            onClick={() => setBlocks(removeScheduleBlock(item.id))}
+            key={s.id}
+            className={`mode-tab ${s.id === activeId ? "active" : ""}`}
+            style={{ flex: "0 1 auto" }}
+            onClick={() => switchTo(s.id)}
           >
-            Remove
+            {s.name}
           </button>
-        </div>
-      ))}
-      {blocks.length === 0 && <p className="empty-text">No existing classes added yet.</p>}
+        ))}
+        <button className="btn-secondary btn btn-small" onClick={handleNewSchedule}>
+          + New schedule
+        </button>
+      </div>
+
+      <div className="card-row" style={{ marginTop: 10 }}>
+        {renaming ? (
+          <input
+            className="input"
+            style={{ flex: 1 }}
+            value={renameValue}
+            autoFocus
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => e.key === "Enter" && commitRename()}
+          />
+        ) : (
+          <h3 style={{ flex: 1, margin: 0 }}>{activeSchedule?.name}</h3>
+        )}
+        {!renaming && (
+          <button className="btn-secondary btn btn-small" onClick={startRename}>
+            Rename
+          </button>
+        )}
+        <button className="btn-danger btn btn-small" onClick={handleDeleteSchedule}>
+          Delete schedule
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        {blocks.map((item) => (
+          <div key={item.id} className="card card-row">
+            <div style={{ flex: 1 }}>
+              <p style={{ fontWeight: 700, fontSize: 14 }}>{item.label}</p>
+              <p className="meta">
+                {DAY_LABELS[item.day]} {formatMilitaryTime(item.start)} – {formatMilitaryTime(item.end)}
+              </p>
+            </div>
+            <button
+              className="btn btn-danger btn-small"
+              onClick={() => {
+                removeScheduleBlock(item.id);
+                refresh();
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        {blocks.length === 0 && <p className="empty-text">No existing classes added yet.</p>}
+      </div>
 
       <div className="mode-tabs">
         <button
