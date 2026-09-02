@@ -13,6 +13,7 @@ import {
   type ScheduleSet,
 } from "../lib/schedule";
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
+import { CAMPUS_PICKER_OPTIONS } from "../lib/campus";
 import { ScreenshotImport } from "../components/ScreenshotImport";
 
 const DAYS = ["M", "T", "W", "H", "F"];
@@ -28,6 +29,7 @@ export function MySchedulePage() {
   const [day, setDay] = useState("M");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [campus, setCampus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -80,7 +82,7 @@ export function MySchedulePage() {
     if (!label.trim()) return setError('Give it a name, e.g. "CS 111".');
     if (!startMilitary || !endMilitary) return setError('Use a time like "3:50 PM" or "15:50" for both fields.');
     setError(null);
-    addScheduleBlock({ label: label.trim(), day, start: startMilitary, end: endMilitary });
+    addScheduleBlock({ label: label.trim(), day, start: startMilitary, end: endMilitary, campus: campus || undefined });
     refresh();
     setLabel("");
     setStart("");
@@ -201,6 +203,14 @@ export function MySchedulePage() {
               onChange={(e) => setEnd(e.target.value)}
             />
           </div>
+          <select className="input" value={campus} onChange={(e) => setCampus(e.target.value)}>
+            <option value="">Campus (optional — enables cross-campus travel-time checks in Search)</option>
+            {CAMPUS_PICKER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
           {error && <p className="error-text">{error}</p>}
           <button className="btn btn-green" onClick={submit}>
             Add to my schedule

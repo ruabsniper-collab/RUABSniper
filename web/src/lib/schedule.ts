@@ -25,6 +25,12 @@ export type ScheduleBlock = {
   // as a section you're looking at," which should never count as a
   // conflict -- you'd be replacing that registration, not adding to it.
   courseKey?: string;
+  // One of campus.ts's canonical CAMPUS_VALUES -- set from a screenshot's
+  // room/campus text when recognizable (scheduleOcr.ts), or picked by hand
+  // on manual entry. Lets checkConflict flag a "technically doesn't
+  // overlap" back-to-back that's actually impossible to make in person
+  // because the two classes are on different campuses.
+  campus?: string;
 };
 
 export type ScheduleSet = {
@@ -181,11 +187,22 @@ export function removeScheduleBlock(id: string): ScheduleBlock[] {
  * actually carry a courseKey (screenshot-imported ones -- see schedule.ts);
  * manually-typed blocks have no structured course identity to compare, so
  * they're checked as a plain time conflict same as always.
+ *
+ * `travelBufferMinutes` extends "conflict" past literal time overlap: two
+ * same-day meetings on *different* campuses with less than this many
+ * minutes between them count as a conflict too, even though their times
+ * technically don't overlap -- there's a real Rutgers NB bus ride between
+ * campuses (Busch <-> Douglass/Cook in particular routinely takes 20-30+
+ * minutes), so "class ends at 7, next one starts at 7:30 across campus" is
+ * not actually attendable back to back. Only compares when both sides have
+ * a known campus -- a block with no campus recorded (most manually-typed
+ * ones) just never triggers this half of the check.
  */
 export function checkConflict(
   meetingTimes: MeetingTime[],
   schedule: ScheduleBlock[],
   sectionCourseKey?: string,
+  travelBufferMinutes = 0,
 ): boolean {
   for (const mt of meetingTimes) {
     if (!mt.day) continue;
@@ -199,8 +216,23 @@ export function checkConflict(
       const bStart = militaryToMinutes(block.start);
       const bEnd = militaryToMinutes(block.end);
       if (bStart == null || bEnd == null) continue;
+
       const overlaps = mtStart < bEnd && bStart < mtEnd;
       if (overlaps) return true;
+
+      if (travelBufferMinutes > 0 && block.campus && mt.campus) {
+        const blockCampus = block.campus.trim().toUpperCase();
+        const sectionCampus = mt.campus.trim().toUpperCase();
+        if (blockCampus && sectionCampus && blockCampus !== sectionCampus) {
+          // Not overlapping means exactly one of these is the "later" side.
+          // Inclusive (<=), not strict -- a gap exactly equal to the chosen
+          // buffer is the boundary case the buffer exists to catch (e.g. a
+          // class ending at 7 and the next starting at 7:30 across campus,
+          // checked against a 30-min buffer, should flag, not narrowly pass).
+          const gap = mtStart >= bEnd ? mtStart - bEnd : bStart - mtEnd;
+          if (gap <= travelBufferMinutes) return true;
+        }
+      }
     }
   }
   return false;

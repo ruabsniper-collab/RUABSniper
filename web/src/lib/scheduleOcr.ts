@@ -7,6 +7,8 @@
 // field before anything is saved. See components/ScreenshotImport.tsx for
 // the review UI -- nothing in this file writes to storage.
 
+import { normalizeCampusName } from "./campus";
+
 export type ScheduleBlockDraft = {
   label: string;
   day: string; // M/T/W/H/F/S/U
@@ -15,6 +17,7 @@ export type ScheduleBlockDraft = {
   sourceLine: string; // the OCR'd line this was guessed from, shown for review
   dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image
   courseKey?: string; // "subjectCode:courseNumber" read off a SOC-style course-code line, when one was found -- lets Search recognize "same course, different section" instead of a hard conflict
+  campus?: string; // one of campus.ts's canonical CAMPUS_VALUES, when recognizable text was found near the course-code line -- powers the cross-campus travel-time conflict check
 };
 
 /** One OCR'd line with its pixel bounding box, reconstructed from OCR.space's word-level overlay data. */
@@ -319,6 +322,7 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
         : line.width * 2;
     const titleParts: string[] = [];
     let courseKey: string | undefined;
+    let codeLineIndex: number | null = null;
     for (let j = i + 1; j < lines.length && titleParts.length < 3; j++) {
       const next = lines[j];
       // Same-row neighboring columns interleave in OCR's overall line order
@@ -336,10 +340,33 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
       const codeMatch = trimmed.match(COURSE_CODE_RE);
       if (codeMatch) {
         courseKey = `${codeMatch[1]}:${codeMatch[2]}`;
+        codeLineIndex = j;
         break;
       }
       if (CREDITS_RE.test(trimmed)) break; // this column's own credits line -- stop
       titleParts.push(trimmed);
+    }
+
+    // Campus/room text (e.g. "(3.0) SC-203 College Avenue") sits on or right
+    // after the course-code line -- a short separate scan from there, since
+    // the title loop above already stopped at that line without reading it.
+    // Best-effort only: if nothing recognizable turns up, campus is just
+    // left unset and this block simply never takes part in the travel-time
+    // conflict check (see checkConflict) -- no different from before this
+    // existed.
+    let campus: string | undefined;
+    if (codeLineIndex != null) {
+      for (let j = codeLineIndex; j < lines.length && j < codeLineIndex + 3; j++) {
+        const next = lines[j];
+        if (j !== codeLineIndex && TIME_RANGE_RE.test(next.text)) break;
+        const sameColumn = Math.abs(next.left + next.width / 2 - blockCenterX) < columnWidth / 2;
+        if (!sameColumn) continue;
+        const found = normalizeCampusName(next.text);
+        if (found) {
+          campus = found;
+          break;
+        }
+      }
     }
 
     drafts.push({
@@ -347,6 +374,7 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
       day,
       start,
       courseKey,
+      campus,
       end,
       sourceLine: line.text,
     });

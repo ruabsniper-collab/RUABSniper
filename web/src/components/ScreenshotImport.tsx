@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { addScheduleBlock } from "../lib/schedule";
 import { runScheduleOcr, parseScheduleImage, type ScheduleBlockDraft } from "../lib/scheduleOcr";
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
+import { CAMPUS_PICKER_OPTIONS } from "../lib/campus";
 
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
 
@@ -14,6 +15,7 @@ type DraftRow = {
   sourceLine: string;
   dayGuessed: boolean;
   courseKey?: string;
+  campus?: string;
 };
 
 function toDraftRow(d: ScheduleBlockDraft): DraftRow {
@@ -31,6 +33,7 @@ function toDraftRow(d: ScheduleBlockDraft): DraftRow {
     sourceLine: d.sourceLine,
     dayGuessed: d.dayGuessed ?? false,
     courseKey: d.courseKey,
+    campus: d.campus,
   };
 }
 
@@ -103,7 +106,7 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         skipped += 1;
         continue;
       }
-      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end, courseKey: d.courseKey });
+      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end, courseKey: d.courseKey, campus: d.campus });
       added += 1;
     }
     setSkippedMsg(
@@ -229,6 +232,23 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
               onChange={(e) => updateDraft(i, { endText: e.target.value })}
             />
           </div>
+          <label className="row-flex" style={{ alignItems: "center", gap: 8 }}>
+            <span className="filter-label" style={{ whiteSpace: "nowrap" }}>
+              Campus
+            </span>
+            <select
+              className="input"
+              value={d.campus ?? ""}
+              onChange={(e) => updateDraft(i, { campus: e.target.value || undefined })}
+            >
+              <option value="">Not detected — pick one to enable travel-time checks</option>
+              {CAMPUS_PICKER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       ))}
 

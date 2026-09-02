@@ -27,6 +27,7 @@ export function SearchPage() {
   const [latestEndText, setLatestEndText] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [hideConflicts, setHideConflicts] = useState(false);
+  const [travelBuffer, setTravelBuffer] = useState(30); // minutes; 0 = off
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
   const [scheduleName, setScheduleName] = useState("");
   const [results, setResults] = useState<SectionWithCourse[]>([]);
@@ -69,6 +70,7 @@ export function SearchPage() {
         locations: locations.size > 0 ? [...locations] : undefined,
         hideScheduleConflicts: hideConflicts,
         mySchedule,
+        travelBufferMinutes: travelBuffer,
         days: filterDays.size > 0 ? [...filterDays] : undefined,
         // Left as typed until it actually parses -- e.g. "9:0" mid-keystroke
         // just doesn't apply a bound yet rather than erroring, same
@@ -91,6 +93,7 @@ export function SearchPage() {
     locations,
     hideConflicts,
     mySchedule,
+    travelBuffer,
     filterDays,
     earliestStartText,
     latestEndText,
@@ -171,6 +174,27 @@ export function SearchPage() {
         </span>
         <input type="checkbox" checked={hideConflicts} onChange={(e) => setHideConflicts(e.target.checked)} />
       </label>
+
+      {hideConflicts && (
+        <label className="switch-row">
+          <span className="filter-label">
+            Also flag tight cross-campus back-to-backs — classes at different campuses don't really
+            "fit" if there's no time to actually get between them
+          </span>
+          <select
+            className="input"
+            style={{ width: 90, flex: "0 0 auto" }}
+            value={travelBuffer}
+            onChange={(e) => setTravelBuffer(Number(e.target.value))}
+          >
+            <option value={0}>Off</option>
+            <option value={15}>15 min</option>
+            <option value={30}>30 min</option>
+            <option value={45}>45 min</option>
+            <option value={60}>60 min</option>
+          </select>
+        </label>
+      )}
 
       <button className="more-filters-toggle" onClick={() => setShowMoreFilters((v) => !v)}>
         {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (sort, location, days/times, online/async)"}

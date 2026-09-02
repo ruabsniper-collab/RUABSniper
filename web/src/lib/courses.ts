@@ -35,6 +35,7 @@ export type SearchFilters = {
   locations?: string[]; // values from LOCATION_OPTIONS, OR'd together against a section's meeting_times
   hideScheduleConflicts?: boolean;
   mySchedule?: ScheduleBlock[];
+  travelBufferMinutes?: number; // also flag a same-day, different-campus gap smaller than this as a conflict (0/undefined = off)
   days?: string[]; // M/T/W/H/F/S/U -- every one of a section's real meeting days must be in this set
   earliestStart?: string; // "HHMM" 24h -- no meeting may start before this
   latestEnd?: string; // "HHMM" 24h -- no meeting may end after this
@@ -188,7 +189,7 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
   if (filters.hideScheduleConflicts && filters.mySchedule?.length) {
     sections = sections.filter((s) => {
       const sectionCourseKey = `${s.courses.subject_code}:${s.courses.course_number}`;
-      return !checkConflict(s.meeting_times, filters.mySchedule!, sectionCourseKey);
+      return !checkConflict(s.meeting_times, filters.mySchedule!, sectionCourseKey, filters.travelBufferMinutes ?? 0);
     });
   }
 
