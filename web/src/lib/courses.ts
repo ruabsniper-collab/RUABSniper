@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type { Course, ProfessorRmpMatch, Section, SectionWithCourse, Watch } from "../types/db";
 import type { Term } from "./term";
 import { checkConflict, type ScheduleBlock } from "./schedule";
+import { militaryToMinutes } from "./time";
 import { listWatches } from "./watches";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
@@ -34,6 +35,9 @@ export type SearchFilters = {
   locations?: string[]; // values from LOCATION_OPTIONS, OR'd together against a section's meeting_times
   hideScheduleConflicts?: boolean;
   mySchedule?: ScheduleBlock[];
+  days?: string[]; // M/T/W/H/F/S/U -- every one of a section's real meeting days must be in this set
+  earliestStart?: string; // "HHMM" 24h -- no meeting may start before this
+  latestEnd?: string; // "HHMM" 24h -- no meeting may end after this
 };
 
 /**
@@ -53,6 +57,35 @@ function matchesLocation(section: SectionWithCourse, selected: string[]): boolea
       ? section.meeting_times.some(isAsyncMeeting)
       : section.meeting_times.some((m) => (m.campus ?? "").toUpperCase() === loc),
   );
+}
+
+/**
+ * True unless some *real* meeting (one with an actual day -- an async
+ * online meeting has none, and never fails a day/time check on its own,
+ * same philosophy as isAsyncMeeting/checkConflict) falls on a day outside
+ * `days` (when `days` is non-empty) or outside the [earliestStart,
+ * latestEnd] window (when either bound is set). Every real meeting has to
+ * fit, not just one -- a MWF class shouldn't pass a "Tue/Thu only" filter
+ * just because it also happens to not meet on, say, Saturday.
+ */
+function matchesDayAndTime(
+  section: SectionWithCourse,
+  days: Set<string>,
+  earliestStart: string | null,
+  latestEnd: string | null,
+): boolean {
+  const earliestMin = earliestStart ? militaryToMinutes(earliestStart) : null;
+  const latestMin = latestEnd ? militaryToMinutes(latestEnd) : null;
+
+  for (const mt of section.meeting_times) {
+    if (!mt.day) continue;
+    if (days.size > 0 && !days.has(mt.day)) return false;
+    const start = militaryToMinutes(mt.start);
+    const end = militaryToMinutes(mt.end);
+    if (earliestMin != null && start != null && start < earliestMin) return false;
+    if (latestMin != null && end != null && end > latestMin) return false;
+  }
+  return true;
 }
 
 function normalizeInstructorName(raw: string): string {
@@ -143,6 +176,13 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
 
   if (filters.locations && filters.locations.length > 0) {
     sections = sections.filter((s) => matchesLocation(s, filters.locations!));
+  }
+
+  if ((filters.days && filters.days.length > 0) || filters.earliestStart || filters.latestEnd) {
+    const daySet = new Set(filters.days ?? []);
+    sections = sections.filter((s) =>
+      matchesDayAndTime(s, daySet, filters.earliestStart ?? null, filters.latestEnd ?? null),
+    );
   }
 
   if (filters.hideScheduleConflicts && filters.mySchedule?.length) {

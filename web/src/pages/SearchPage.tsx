@@ -5,11 +5,13 @@ import { guessCurrentTerm, termLabel } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { getActiveSchedule, type ScheduleBlock } from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
+import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
 import { SectionRow } from "../components/SectionRow";
 import { NotificationPrompt } from "../components/NotificationPrompt";
 import type { SectionWithCourse } from "../types/db";
 
 const term = guessCurrentTerm();
+const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
 
 export function SearchPage() {
   const navigate = useNavigate();
@@ -20,6 +22,9 @@ export function SearchPage() {
   const [requireRmpMatch, setRequireRmpMatch] = useState(false);
   const [sortByRating, setSortByRating] = useState(false);
   const [locations, setLocations] = useState<Set<string>>(new Set());
+  const [filterDays, setFilterDays] = useState<Set<string>>(new Set());
+  const [earliestStartText, setEarliestStartText] = useState("");
+  const [latestEndText, setLatestEndText] = useState("");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [hideConflicts, setHideConflicts] = useState(false);
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
@@ -64,6 +69,12 @@ export function SearchPage() {
         locations: locations.size > 0 ? [...locations] : undefined,
         hideScheduleConflicts: hideConflicts,
         mySchedule,
+        days: filterDays.size > 0 ? [...filterDays] : undefined,
+        // Left as typed until it actually parses -- e.g. "9:0" mid-keystroke
+        // just doesn't apply a bound yet rather than erroring, same
+        // leniency as any other free-text filter input.
+        earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
+        latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
       });
       setResults(data);
     } catch (e) {
@@ -71,7 +82,19 @@ export function SearchPage() {
     } finally {
       setLoading(false);
     }
-  }, [query, minRating, includeUnrated, requireRmpMatch, sortByRating, locations, hideConflicts, mySchedule]);
+  }, [
+    query,
+    minRating,
+    includeUnrated,
+    requireRmpMatch,
+    sortByRating,
+    locations,
+    hideConflicts,
+    mySchedule,
+    filterDays,
+    earliestStartText,
+    latestEndText,
+  ]);
 
   useEffect(() => {
     const handle = setTimeout(runSearch, 350); // debounce
@@ -80,6 +103,15 @@ export function SearchPage() {
 
   function toggleLocation(value: string) {
     setLocations((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
+  function toggleDay(value: string) {
+    setFilterDays((prev) => {
       const next = new Set(prev);
       if (next.has(value)) next.delete(value);
       else next.add(value);
@@ -141,7 +173,7 @@ export function SearchPage() {
       </label>
 
       <button className="more-filters-toggle" onClick={() => setShowMoreFilters((v) => !v)}>
-        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (sort, location, online/async)"}
+        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (sort, location, days/times, online/async)"}
       </button>
 
       {showMoreFilters && (
@@ -172,6 +204,39 @@ export function SearchPage() {
                   {opt.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="filter-row">
+            <span className="filter-label">Days (every meeting must be on one of these)</span>
+            <div className="chip-row">
+              {DAYS.map((d) => (
+                <button
+                  key={d}
+                  className={`day-chip ${filterDays.has(d) ? "active" : ""}`}
+                  onClick={() => toggleDay(d)}
+                >
+                  {DAY_LABELS[d]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="filter-row">
+            <span className="filter-label">Time window (no meeting outside this range)</span>
+            <div className="row-flex" style={{ marginTop: 6 }}>
+              <input
+                className="input"
+                placeholder="No earlier than, e.g. 9:00 AM"
+                value={earliestStartText}
+                onChange={(e) => setEarliestStartText(e.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="No later than, e.g. 5:00 PM"
+                value={latestEndText}
+                onChange={(e) => setLatestEndText(e.target.value)}
+              />
             </div>
           </div>
         </>
