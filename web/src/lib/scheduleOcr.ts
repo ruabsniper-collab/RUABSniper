@@ -8,6 +8,7 @@
 // the review UI -- nothing in this file writes to storage.
 
 import { normalizeCampusName } from "./campus";
+import { nearestCampusByColor, type RGB } from "./colorSample";
 
 export type ScheduleBlockDraft = {
   label: string;
@@ -275,8 +276,20 @@ const CREDITS_RE = /^\(\d/;
  * Falls back to parseScheduleText(text) when no day-header row is found --
  * either OCR didn't return position data, or this isn't a grid at all (a
  * typed list, a photo of a printout, etc.).
+ *
+ * `sampleColor` is an optional pixel-color reader (left, top, width, height)
+ * -> average RGB over that region, backed by a canvas of the original
+ * screenshot (see colorSample.ts) -- ScreenshotImport wires this up. When
+ * given, a campus color legend is built from the campus-name chips WebReg
+ * prints above the day headers, and used as a fallback for any block whose
+ * room/campus text didn't yield a match. Omitting it (as every existing
+ * caller and test does) just skips this entirely -- campus detection still
+ * works off text alone, same as before this existed.
  */
-export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
+export function parseScheduleImage(
+  result: OcrResult,
+  sampleColor?: (left: number, top: number, width: number, height: number) => RGB | null,
+): ScheduleBlockDraft[] {
   const { lines, text } = result;
 
   const dayLines = lines
@@ -294,6 +307,23 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
     .filter((d) => d.line.top <= minTop + tolerance)
     .map((d) => ({ day: d.day, centerX: d.line.left + d.line.width / 2 }));
   if (headerRow.length < 2) return parseScheduleText(text);
+
+  // Campus color legend, built once from whatever campus-name chips sit
+  // above the day-header row (the legend, not a class block) -- their own
+  // bounding box IS their colored chip, so sampling it directly gives that
+  // campus's color for this specific screenshot (compression/theme can
+  // shift exact values run to run, so calibrating per-screenshot beats a
+  // hardcoded color table).
+  const colorLegend = new Map<string, RGB>();
+  if (sampleColor) {
+    for (const line of lines) {
+      if (line.top >= minTop) continue;
+      const campus = normalizeCampusName(line.text);
+      if (!campus || colorLegend.has(campus)) continue;
+      const color = sampleColor(line.left, line.top, line.width, line.height);
+      if (color) colorLegend.set(campus, color);
+    }
+  }
 
   function nearestColumn(centerX: number): string {
     return headerRow.reduce((best, col) =>
@@ -367,6 +397,15 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
           break;
         }
       }
+    }
+
+    // Color fallback: only when the text search above found nothing, and
+    // only when a legend was actually built for this screenshot. Sampled
+    // from the time line's own region, which sits inside the same colored
+    // cell as the rest of the block.
+    if (!campus && sampleColor && colorLegend.size > 0) {
+      const blockColor = sampleColor(line.left, line.top, line.width, line.height);
+      if (blockColor) campus = nearestCampusByColor(blockColor, colorLegend) ?? undefined;
     }
 
     drafts.push({

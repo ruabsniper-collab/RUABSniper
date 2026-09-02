@@ -177,10 +177,7 @@ export function SearchPage() {
 
       {hideConflicts && (
         <label className="switch-row">
-          <span className="filter-label">
-            Also flag tight cross-campus back-to-backs — classes at different campuses don't really
-            "fit" if there's no time to actually get between them
-          </span>
+          <span className="filter-label">Also flag tight cross-campus back-to-backs</span>
           <select
             className="input"
             style={{ width: 90, flex: "0 0 auto" }}
@@ -232,7 +229,7 @@ export function SearchPage() {
           </div>
 
           <div className="filter-row">
-            <span className="filter-label">Days (every meeting must be on one of these)</span>
+            <span className="filter-label">Days</span>
             <div className="chip-row">
               {DAYS.map((d) => (
                 <button
@@ -247,7 +244,7 @@ export function SearchPage() {
           </div>
 
           <div className="filter-row">
-            <span className="filter-label">Time window (no meeting outside this range)</span>
+            <span className="filter-label">Time window</span>
             <div className="row-flex" style={{ marginTop: 6 }}>
               <input
                 className="input"

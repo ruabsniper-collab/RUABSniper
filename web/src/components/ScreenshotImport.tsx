@@ -3,6 +3,7 @@ import { addScheduleBlock } from "../lib/schedule";
 import { runScheduleOcr, parseScheduleImage, type ScheduleBlockDraft } from "../lib/scheduleOcr";
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
 import { CAMPUS_PICKER_OPTIONS } from "../lib/campus";
+import { loadImageCanvas, sampleRegionColor } from "../lib/colorSample";
 
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
 
@@ -79,7 +80,20 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
       const base64 = await fileToBase64(file);
       const result = await runScheduleOcr(base64);
       setRawText(result.text);
-      setDrafts(parseScheduleImage(result).map(toDraftRow));
+
+      // Color-based campus detection is a bonus signal, not a required one
+      // -- if decoding the image for pixel access fails for any reason, the
+      // import should still proceed on text alone rather than erroring out
+      // over a fallback that didn't even need to work.
+      let sampleColor: ((left: number, top: number, width: number, height: number) => import("../lib/colorSample").RGB | null) | undefined;
+      try {
+        const { ctx, width, height } = await loadImageCanvas(base64);
+        sampleColor = (left, top, w, h) => sampleRegionColor(ctx, left, top, w, h, width, height);
+      } catch {
+        sampleColor = undefined;
+      }
+
+      setDrafts(parseScheduleImage(result, sampleColor).map(toDraftRow));
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
@@ -241,7 +255,7 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
               value={d.campus ?? ""}
               onChange={(e) => updateDraft(i, { campus: e.target.value || undefined })}
             >
-              <option value="">Not detected — pick one to enable travel-time checks</option>
+              <option value="">Campus not detected</option>
               {CAMPUS_PICKER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}

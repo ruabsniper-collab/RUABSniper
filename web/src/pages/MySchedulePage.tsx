@@ -204,7 +204,7 @@ export function MySchedulePage() {
             />
           </div>
           <select className="input" value={campus} onChange={(e) => setCampus(e.target.value)}>
-            <option value="">Campus (optional — enables cross-campus travel-time checks in Search)</option>
+            <option value="">Campus (optional)</option>
             {CAMPUS_PICKER_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
