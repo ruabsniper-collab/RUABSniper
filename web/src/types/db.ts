@@ -69,5 +69,12 @@ export type Watch = {
 /** A section joined with its parent course and (if any) RMP match — the shape most screens work with. */
 export type SectionWithCourse = Section & {
   courses: Course;
+  // Highest-rated instructor's match, when there's more than one -- what
+  // filtering/sorting by rating goes by (see courses.ts). Display should
+  // use professorRatings below instead, which has one entry per instructor.
   professorRating?: ProfessorRmpMatch | null;
+  // One entry per section.instructors, same order, null where that
+  // instructor has no RMP match at all -- lets a co-taught section show
+  // every instructor's own rating instead of just the best one.
+  professorRatings?: (ProfessorRmpMatch | null)[];
 };

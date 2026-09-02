@@ -46,12 +46,25 @@ export function SectionRow({
         </span>
       </div>
       <p className="meta">{section.courses.title}</p>
-      <p className="meta">
-        Index {section.index_number} · {section.instructors.join(", ") || "Staff"}
-      </p>
+      <p className="meta">Index {section.index_number}</p>
+      {section.instructors.length === 0 ? (
+        <p className="meta">Staff</p>
+      ) : (
+        section.instructors.map((name, i) => (
+          <div key={i} className="card-row" style={{ gap: 6, marginTop: 2 }}>
+            <span className="meta" style={{ flex: 1 }}>
+              {name}
+            </span>
+            {/* Falls back to the section's single "best" rating only if a
+                caller somehow didn't attach the per-instructor array (every
+                current one does) -- keeps a lone-instructor section showing
+                something rather than an unrated badge for stale/missed data. */}
+            <RatingBadge rating={section.professorRatings?.[i] ?? (section.instructors.length === 1 ? section.professorRating : null)} />
+          </div>
+        ))
+      )}
       <p className="meta">{meetingSummary(section)}</p>
       <div className="section-footer">
-        <RatingBadge rating={section.professorRating} />
         {onToggleWatch && (
           <button
             className={`watch-btn ${isWatched ? "active" : ""}`}

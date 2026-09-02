@@ -330,7 +330,12 @@ h3 {
 
 .section-footer {
   display: flex;
-  justify-content: space-between;
+  /* Used to split a rating badge (left) and the watch button (right) --
+     now holds only the watch button, since ratings moved to a per-
+     instructor row above (see SectionRow.tsx). flex-end keeps it on the
+     right where it's always been rather than sliding to the left with
+     only one child in a space-between row. */
+  justify-content: flex-end;
   align-items: center;
   margin-top: 6px;
 }

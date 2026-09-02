@@ -107,6 +107,14 @@ function bestRatingFor(
   return best;
 }
 
+/** One entry per instructor, same order, null where there's no RMP row at all -- for showing every co-instructor's own rating rather than just the best one. */
+function ratingsForInstructors(
+  instructors: string[],
+  ratingsByName: Map<string, ProfessorRmpMatch>,
+): (ProfessorRmpMatch | null)[] {
+  return instructors.map((raw) => ratingsByName.get(normalizeInstructorName(raw)) ?? null);
+}
+
 export async function searchCourses(filters: SearchFilters): Promise<SectionWithCourse[]> {
   const { term, query } = filters;
 
@@ -155,7 +163,11 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
     const ratingsByName = new Map<string, ProfessorRmpMatch>(
       (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
     );
-    sections = sections.map((s) => ({ ...s, professorRating: bestRatingFor(s.instructors, ratingsByName) }));
+    sections = sections.map((s) => ({
+      ...s,
+      professorRating: bestRatingFor(s.instructors, ratingsByName),
+      professorRatings: ratingsForInstructors(s.instructors, ratingsByName),
+    }));
   }
 
   // Everything below reads s.professorRating, so it applies whether or not
@@ -236,7 +248,11 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
     const ratingsByName = new Map<string, ProfessorRmpMatch>(
       (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
     );
-    sections = sections.map((s) => ({ ...s, professorRating: bestRatingFor(s.instructors, ratingsByName) }));
+    sections = sections.map((s) => ({
+      ...s,
+      professorRating: bestRatingFor(s.instructors, ratingsByName),
+      professorRatings: ratingsForInstructors(s.instructors, ratingsByName),
+    }));
   }
 
   return sections;
@@ -294,7 +310,11 @@ export async function getWatchedSections(): Promise<WatchedSection[]> {
     const ratingsByName = new Map<string, ProfessorRmpMatch>(
       (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
     );
-    sections = sections.map((s) => ({ ...s, professorRating: bestRatingFor(s.instructors, ratingsByName) }));
+    sections = sections.map((s) => ({
+      ...s,
+      professorRating: bestRatingFor(s.instructors, ratingsByName),
+      professorRatings: ratingsForInstructors(s.instructors, ratingsByName),
+    }));
   }
 
   const sectionByKey = new Map(sections.map((s) => [`${s.term_year}:${s.term_code}:${s.index_number}`, s]));
