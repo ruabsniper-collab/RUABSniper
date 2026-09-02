@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { addScheduleBlock, loadMySchedule, removeScheduleBlock, type ScheduleBlock } from "../lib/schedule";
-import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
+import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
 import { ScreenshotImport } from "../components/ScreenshotImport";
 
 const DAYS = ["M", "T", "W", "H", "F"];
@@ -46,7 +46,7 @@ export function MySchedulePage() {
           <div style={{ flex: 1 }}>
             <p style={{ fontWeight: 700, fontSize: 14 }}>{item.label}</p>
             <p className="meta">
-              {DAY_LABELS[item.day]} {item.start} – {item.end}
+              {DAY_LABELS[item.day]} {formatMilitaryTime(item.start)} – {formatMilitaryTime(item.end)}
             </p>
           </div>
           <button

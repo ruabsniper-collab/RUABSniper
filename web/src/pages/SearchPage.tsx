@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, termLabel } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
@@ -13,6 +13,7 @@ const term = guessCurrentTerm();
 
 export function SearchPage() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [query, setQuery] = useState("");
   const [minRating, setMinRating] = useState<number | null>(null);
   const [includeUnrated, setIncludeUnrated] = useState(true);
@@ -35,10 +36,16 @@ export function SearchPage() {
     setWatchIdByIndex(new Map(relevant.map((w) => [w.index_number, w.id])));
   }, []);
 
+  // This tab never unmounts (see App.tsx) -- a plain mount-time effect would
+  // only ever run once, missing anything added to My Schedule or changed in
+  // Snipes after that first load. Re-syncing on every return to "/" instead
+  // means both stay fresh without needing a full app restart, while still
+  // not touching query/results state when you're not on this tab.
   useEffect(() => {
+    if (pathname !== "/") return;
     setMySchedule(loadMySchedule());
     refreshWatches();
-  }, [refreshWatches]);
+  }, [pathname, refreshWatches]);
 
   const runSearch = useCallback(async () => {
     setLoading(true);

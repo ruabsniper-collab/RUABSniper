@@ -315,11 +315,19 @@ export function parseScheduleImage(result: OcrResult): ScheduleBlockDraft[] {
     const titleParts: string[] = [];
     for (let j = i + 1; j < lines.length && titleParts.length < 3; j++) {
       const next = lines[j];
-      if (TIME_RANGE_RE.test(next.text)) break;
-      const trimmed = next.text.trim();
-      if (COURSE_CODE_RE.test(trimmed) || CREDITS_RE.test(trimmed)) break;
+      // Same-row neighboring columns interleave in OCR's overall line order
+      // (e.g. Tue/Thu/Fri classes that all happen to start at 12:10 PM emit
+      // their lines back to back) -- a course-code/credits/time line from a
+      // *different* day's block must not stop this block's title search, or
+      // it never reaches this block's own title further down the list.
+      // Checked first, before any of the stop patterns below, for exactly
+      // that reason: verified live, this was silently producing "Imported
+      // class" for a real class whose title just wasn't the very next line.
       const sameColumn = Math.abs(next.left + next.width / 2 - blockCenterX) < columnWidth / 2;
       if (!sameColumn) continue;
+      const trimmed = next.text.trim();
+      if (TIME_RANGE_RE.test(next.text)) break; // this column's own next class -- stop
+      if (COURSE_CODE_RE.test(trimmed) || CREDITS_RE.test(trimmed)) break; // this column's own code/credits line -- stop
       titleParts.push(trimmed);
     }
 
