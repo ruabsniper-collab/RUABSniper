@@ -11,7 +11,11 @@ function meetingLabel(m: SectionWithCourse["meeting_times"][number]): string {
   return `${DAY_LABELS[m.day] ?? m.day} ${formatMilitaryTime(m.start)}–${formatMilitaryTime(m.end)}${campus}`;
 }
 
-function meetingSummary(section: SectionWithCourse): string {
+// Exported for RegisterPage, which shows the same meeting-time summary on
+// the page reached from tapping a notification or "Open WebReg" -- someone
+// shouldn't have to remember what a bare index number means once they're
+// staring at the quick-add box.
+export function meetingSummary(section: SectionWithCourse): string {
   if (section.meeting_times.length === 0) return "No regular meeting time";
   return section.meeting_times.map(meetingLabel).join(", ");
 }

@@ -258,6 +258,51 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
   return sections;
 }
 
+/**
+ * One section's full detail by index number alone -- what RegisterPage
+ * needs. Reached two ways: an in-app tap (which knows the term) and a push
+ * notification's direct link (which only ever carries `?index=`, see
+ * backend/lib/pollOnce.ts and sw.js's notificationclick -- there's no room
+ * to also thread term_year/term_code through a notification payload without
+ * changing what's stored), so this deliberately doesn't require one. Index
+ * numbers reset each term, so if the same index ever existed in an older
+ * term too this takes the most recent -- the only case that actually
+ * matters for a page whose whole point is "register right now".
+ */
+export async function getSectionByIndex(indexNumber: string): Promise<SectionWithCourse | null> {
+  const { data, error } = await supabase
+    .from("sections")
+    .select("*, courses(*)")
+    .eq("index_number", indexNumber)
+    .order("term_year", { ascending: false })
+    .order("term_code", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as Section & { courses: Course };
+  let section: SectionWithCourse = { ...row, courses: row.courses };
+
+  if (section.instructors.length > 0) {
+    const { data: ratings, error: ratingsErr } = await supabase
+      .from("professor_rmp_matches")
+      .select("*")
+      .in("instructor_name", section.instructors.map(normalizeInstructorName));
+    if (ratingsErr) throw ratingsErr;
+    const ratingsByName = new Map<string, ProfessorRmpMatch>(
+      (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
+    );
+    section = {
+      ...section,
+      professorRating: bestRatingFor(section.instructors, ratingsByName),
+      professorRatings: ratingsForInstructors(section.instructors, ratingsByName),
+    };
+  }
+
+  return section;
+}
+
 export type WatchedSection = { watch: Watch; section: SectionWithCourse | null };
 
 /**

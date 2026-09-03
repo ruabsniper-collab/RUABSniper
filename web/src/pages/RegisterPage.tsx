@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { haptic } from "../lib/haptics";
+import { getSectionByIndex } from "../lib/courses";
+import { meetingSummary } from "../components/SectionRow";
+import { RatingBadge } from "../components/RatingBadge";
+import type { SectionWithCourse } from "../types/db";
 
 const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
 
@@ -17,6 +21,38 @@ export function RegisterPage() {
   const indexNumber = searchParams.get("index") ?? "";
   const label = searchParams.get("label") ?? "";
   const [copied, setCopied] = useState(false);
+  const [section, setSection] = useState<SectionWithCourse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // This page is reached from a push notification tap as often as from an
+  // in-app button (see sw.js's notificationclick + backend/lib/pollOnce.ts)
+  // -- a fresh top-level load with nothing but ?index=&label= in the URL,
+  // no in-memory section object to fall back on. Fetching by index is the
+  // one path that works for both, so someone doesn't have to remember what
+  // a bare index number means (professor, when, where) right when they're
+  // about to act on it.
+  useEffect(() => {
+    let cancelled = false;
+    if (!indexNumber) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    getSectionByIndex(indexNumber)
+      .then((s) => {
+        if (!cancelled) setSection(s);
+      })
+      .catch(() => {
+        // Swallow -- the page still works with just the index number below,
+        // this detail card is a bonus, not a requirement to register.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [indexNumber]);
 
   async function copyIndex() {
     await navigator.clipboard.writeText(indexNumber);
@@ -36,9 +72,45 @@ export function RegisterPage() {
         app.
       </div>
 
+      {loading && <div className="skeleton-row" style={{ marginTop: 12, height: 120 }} />}
+
+      {!loading && section && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="section-row-header">
+            <span className="section-title">
+              {section.courses.subject_code}:{section.courses.course_number} — {section.courses.title}
+            </span>
+            <span className={`pill ${section.open ? "pill-open" : "pill-closed"}`}>
+              {section.open ? "OPEN" : "CLOSED"}
+            </span>
+          </div>
+          <p className="meta">Section {section.section_number}</p>
+          {section.instructors.length === 0 ? (
+            <p className="meta">Staff</p>
+          ) : (
+            section.instructors.map((name, i) => (
+              <div key={i} className="card-row" style={{ gap: 6, marginTop: 2 }}>
+                <span className="meta" style={{ flex: 1 }}>
+                  {name}
+                </span>
+                <RatingBadge rating={section.professorRatings?.[i] ?? null} />
+              </div>
+            ))
+          )}
+          <p className="meta" style={{ marginTop: 4 }}>
+            {meetingSummary(section)}
+          </p>
+        </div>
+      )}
+
+      {!loading && !section && (
+        <p className="hint" style={{ marginTop: 12 }}>
+          {label || "Couldn't load full section details — you can still register with the index below."}
+        </p>
+      )}
+
       <div className="index-bar">
         <div>
-          <p className="meta">{label}</p>
           <p className="index-number">Index {indexNumber}</p>
         </div>
       </div>
