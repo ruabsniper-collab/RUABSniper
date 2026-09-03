@@ -17,10 +17,14 @@
 // that path keeps running as a slower fallback. If this worker's VM is ever
 // down (reboot, host maintenance, connectivity blip), the 1-minute path
 // still catches every open/close within 60s instead of a silent gap. Both
-// write to the same `watches.last_status` column with the same
-// closed->open edge-trigger check, so whichever one runs first for a given
-// change wins and the other just sees last_status already flipped and skips
-// — safe to run both at once, no double-notify.
+// write to the same `watches.last_status` column and both run against it
+// concurrently, by design — that's genuinely safe now, but it wasn't just
+// from "whichever one runs first wins" as this comment used to claim: a
+// plain read-then-send-then-write let both of them read last_status=false
+// in the same window and both send a push before either write landed,
+// confirmed live as the actual cause of duplicate "seat opened"
+// notifications. pollOnce.ts's UPDATE ... WHERE last_status = false is
+// the real guard — an atomic claim, not a hope. Don't remove it.
 //
 // Politeness/self-preservation: jittered interval (not a robotic exact
 // period) plus exponential backoff on repeated failures, so a rough patch
