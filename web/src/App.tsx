@@ -4,6 +4,7 @@ import { ToastHost } from "./components/ToastHost";
 import { SearchPage } from "./pages/SearchPage";
 import { CourseDetailPage } from "./pages/CourseDetailPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { OpenSnipesPage } from "./pages/OpenSnipesPage";
 import { WatchesPage } from "./pages/WatchesPage";
 import { MySchedulePage } from "./pages/MySchedulePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -31,7 +32,7 @@ const TABS = [
 
 export default function App() {
   const { pathname } = useLocation();
-  const onStackPage = pathname.startsWith("/course/") || pathname === "/register";
+  const onStackPage = pathname.startsWith("/course/") || pathname === "/register" || pathname === "/watches/open";
 
   return (
     <>
@@ -45,6 +46,7 @@ export default function App() {
           <Routes>
             <Route path="/course/:courseId" element={<CourseDetailPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/watches/open" element={<OpenSnipesPage />} />
           </Routes>
         )}
       </main>

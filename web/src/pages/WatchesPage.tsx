@@ -113,7 +113,11 @@ export function WatchesPage() {
             <div className="stat-label">Sniped</div>
             <div className="stat-value">{watched.length}</div>
           </div>
-          <div className="stat-card">
+          <div
+            className={`stat-card ${openCount > 0 ? "stat-card-clickable" : ""}`}
+            role={openCount > 0 ? "button" : undefined}
+            onClick={openCount > 0 ? () => navigate("/watches/open") : undefined}
+          >
             <div className="stat-label">Open now</div>
             <div className={`stat-value ${openCount > 0 ? "green" : ""}`}>{openCount}</div>
           </div>

@@ -85,7 +85,8 @@
   .segmented button,
   .bottom-nav a,
   .badge,
-  .toast-action {
+  .toast-action,
+  .stat-card-clickable {
     transition:
       background-color 0.15s ease,
       color 0.15s ease,
@@ -102,7 +103,8 @@
   .watch-btn:active,
   .mode-tab:active,
   .segmented button:active,
-  .toast-action:active {
+  .toast-action:active,
+  .stat-card-clickable:active {
     transform: scale(0.95);
   }
 
@@ -245,6 +247,11 @@ body {
 
 .stat-value.green {
   color: var(--green);
+}
+
+.stat-card-clickable {
+  cursor: pointer;
+  border-color: var(--green);
 }
 
 .nav-icon svg {
