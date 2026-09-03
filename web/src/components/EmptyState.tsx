@@ -1,26 +1,13 @@
 import type { ReactNode } from "react";
+import { SearchIcon, TargetIcon } from "./icons";
 
 type Icon = "target" | "search";
 
-// Plain outline icons, hand-drawn as inline SVG rather than pulling in an
-// icon library for two glyphs -- same "no framework, this is small enough"
-// reasoning as styles.css. Colored via currentColor from .empty-state-icon
-// so they pick up the theme automatically, light or dark.
+// Reuses the exact same icons as BottomNav's tab icons (components/icons.tsx)
+// so a tab's own icon and its "nothing here yet" state always match.
 const ICONS: Record<Icon, ReactNode> = {
-  target: (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="12" cy="12" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="12" cy="12" r="1" fill="currentColor" />
-      <path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  ),
-  search: (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M20 20l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  ),
+  target: <TargetIcon />,
+  search: <SearchIcon />,
 };
 
 // A page-level "nothing here yet" state -- an outline icon above the
