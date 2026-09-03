@@ -172,14 +172,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isOpenNow = openSet.has(w.index_number);
 
     if (isOpenNow && !w.last_status) {
-      opened++;
-      const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-      await sendPushToDevice(w.device_id, {
-        title: "A seat opened up!",
-        body: label,
-        url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
-      });
-      await supabaseAdmin.from("watches").update({ last_status: true, notified_at: new Date().toISOString() }).eq("id", w.id);
+      // Atomic claim via UPDATE ... WHERE last_status = false -- this
+      // duplicates backend/lib/pollOnce.ts's own version of the same guard
+      // (see its comment for the full story: this endpoint and
+      // poll-worker.ts's persistent loop run concurrently by design, and a
+      // plain read-then-send-then-write let both notify for the same
+      // flip). Keep both copies in sync if this logic ever changes.
+      const { data: claimed, error: claimErr } = await supabaseAdmin
+        .from("watches")
+        .update({ last_status: true, notified_at: new Date().toISOString() })
+        .eq("id", w.id)
+        .eq("last_status", false)
+        .select("id");
+      if (claimErr) {
+        console.error(`[poll] failed to claim watch ${w.id}:`, claimErr);
+        continue;
+      }
+      if (claimed && claimed.length > 0) {
+        opened++;
+        const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
+        await sendPushToDevice(w.device_id, {
+          title: "A seat opened up!",
+          body: label,
+          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
+        });
+      }
     } else if (!isOpenNow && w.last_status) {
       closedAgain++;
       await supabaseAdmin.from("watches").update({ last_status: false, notified_at: null }).eq("id", w.id);

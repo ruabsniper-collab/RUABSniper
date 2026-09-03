@@ -92,18 +92,36 @@ export async function pollOnce(): Promise<PollResult> {
 
     if (isOpenNow && !w.last_status) {
       // closed -> open: notify just this watch's device, right away.
-      opened++;
-      const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-      openedLabels.push(`${label} (device ${w.device_id})`);
-      await sendPushToDevice(w.device_id, {
-        title: "A seat opened up!",
-        body: label,
-        url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
-      });
-      await supabaseAdmin
+      //
+      // This UPDATE ... WHERE last_status = false is the atomic claim on
+      // "am I the one who gets to notify for this flip" -- poll-worker.ts's
+      // loop and web/api/poll.ts's 1-minute cron both run against the same
+      // watches table at once, by design (see poll-worker.ts's comment),
+      // and a plain read-then-send-then-write let both of them read
+      // last_status=false in the same window and both send a push before
+      // either write landed -- confirmed as the actual cause of duplicate
+      // "seat opened" notifications in production, not just a theoretical
+      // race. Postgres serializes concurrent UPDATEs to the same row, so
+      // exactly one caller's WHERE clause still matches and gets a row
+      // back; only that one is allowed to send. The loser affects zero
+      // rows and silently skips -- no error, no double-notify.
+      const { data: claimed, error: claimErr } = await supabaseAdmin
         .from("watches")
         .update({ last_status: true, notified_at: new Date().toISOString() })
-        .eq("id", w.id);
+        .eq("id", w.id)
+        .eq("last_status", false)
+        .select("id");
+      if (claimErr) throw claimErr;
+      if (claimed && claimed.length > 0) {
+        opened++;
+        const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
+        openedLabels.push(`${label} (device ${w.device_id})`);
+        await sendPushToDevice(w.device_id, {
+          title: "A seat opened up!",
+          body: label,
+          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
+        });
+      }
     } else if (!isOpenNow && w.last_status) {
       // open -> closed again: reset so a future re-open notifies again.
       closedAgain++;
