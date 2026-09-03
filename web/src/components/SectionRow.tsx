@@ -11,7 +11,11 @@ function meetingLabel(m: SectionWithCourse["meeting_times"][number]): string {
   return `${DAY_LABELS[m.day] ?? m.day} ${formatMilitaryTime(m.start)}–${formatMilitaryTime(m.end)}${campus}`;
 }
 
-function meetingSummary(section: SectionWithCourse): string {
+// Exported for RegisterPage, which shows the same meeting-time summary on
+// the page reached from tapping a notification or "Open WebReg" -- someone
+// shouldn't have to remember what a bare index number means once they're
+// staring at the quick-add box.
+export function meetingSummary(section: SectionWithCourse): string {
   if (section.meeting_times.length === 0) return "No regular meeting time";
   return section.meeting_times.map(meetingLabel).join(", ");
 }
@@ -21,11 +25,16 @@ export function SectionRow({
   onClick,
   onToggleWatch,
   isWatched,
+  justOpened,
 }: {
   section: SectionWithCourse;
   onClick?: () => void;
   onToggleWatch?: () => void;
   isWatched?: boolean;
+  // True for one render right after this section flips closed -> open on
+  // Watches -- plays a highlight animation for the moment the app exists
+  // for. See WatchesPage.tsx's refresh().
+  justOpened?: boolean;
 }) {
   const navigate = useNavigate();
 
@@ -36,7 +45,11 @@ export function SectionRow({
   }
 
   return (
-    <div className="section-row" onClick={onClick} role={onClick ? "button" : undefined}>
+    <div
+      className={`section-row ${justOpened ? "just-opened" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
       <div className="section-row-header">
         <span className="section-title">
           {section.courses.subject_code}:{section.courses.course_number} · sec {section.section_number}
