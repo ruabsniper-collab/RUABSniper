@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { haptic } from "../lib/haptics";
+import { showToast } from "../lib/toast";
 import { getSectionByIndex } from "../lib/courses";
 import { meetingSummary } from "../components/SectionRow";
 import { RatingBadge } from "../components/RatingBadge";
@@ -55,10 +56,18 @@ export function RegisterPage() {
   }, [indexNumber]);
 
   async function copyIndex() {
-    await navigator.clipboard.writeText(indexNumber);
-    setCopied(true);
-    haptic("tap");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(indexNumber);
+      setCopied(true);
+      haptic("tap");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context, an
+      // unfocused document) -- the index is right there on screen either
+      // way, so this isn't fatal, but a silent no-op on a tap is worse
+      // than saying so.
+      showToast("Couldn't copy — the index is above");
+    }
   }
 
   function openWebReg() {

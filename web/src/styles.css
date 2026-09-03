@@ -84,7 +84,8 @@
   .mode-tab,
   .segmented button,
   .bottom-nav a,
-  .badge {
+  .badge,
+  .toast-action {
     transition:
       background-color 0.15s ease,
       color 0.15s ease,
@@ -100,7 +101,8 @@
   .day-chip:active,
   .watch-btn:active,
   .mode-tab:active,
-  .segmented button:active {
+  .segmented button:active,
+  .toast-action:active {
     transform: scale(0.95);
   }
 
@@ -189,12 +191,60 @@ body {
 }
 
 .nav-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 26px;
   border-radius: 999px;
+}
+
+/* Dot on the Snipes tab when something you're sniping is currently open --
+   see lib/watchStatus.ts. Fixed position rather than flowing with the pill
+   so it doesn't shift when the active-tab background appears/disappears. */
+.nav-badge {
+  position: absolute;
+  top: 1px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px var(--card-bg);
+}
+
+/* Snipes stat strip (WatchesPage) -- quick-glance counts above the list. */
+.stat-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stat-card {
+  flex: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.stat-value.green {
+  color: var(--green);
 }
 
 .nav-icon svg {
@@ -570,20 +620,35 @@ h3 {
 }
 
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   background: var(--text);
   color: var(--bg);
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 14px;
+  padding: 8px 8px 8px 14px;
   border-radius: 999px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   max-width: 92%;
-  text-align: center;
+  pointer-events: auto; /* .toast-host itself is pointer-events:none so it never blocks the page underneath */
 }
 
 .toast-success {
   background: var(--green);
   color: #fff;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: no-preference) {

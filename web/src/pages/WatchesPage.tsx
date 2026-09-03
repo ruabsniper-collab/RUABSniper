@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getWatchedSections, type WatchedSection } from "../lib/courses";
-import { removeWatch } from "../lib/watches";
+import { addWatch, removeWatch } from "../lib/watches";
 import { termLabel } from "../lib/term";
 import { SectionRow } from "../components/SectionRow";
 import { EmptyState } from "../components/EmptyState";
@@ -9,6 +9,7 @@ import { PullToRefreshIndicator } from "../components/PullToRefreshIndicator";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import { usePullToRefresh } from "../lib/usePullToRefresh";
+import { setOpenSnipeCount } from "../lib/watchStatus";
 
 const POLL_MS = 30_000; // frequent enough to actually catch a closed -> open flip while the tab's open
 
@@ -40,6 +41,10 @@ export function WatchesPage() {
       const newlyOpened = data.filter((w) => lastStatus.current.get(w.watch.id) === false && w.watch.last_status === true);
       lastStatus.current = new Map(data.map((w) => [w.watch.id, w.watch.last_status]));
       setWatched(data);
+      // Published for BottomNav's badge dot (lib/watchStatus.ts) -- this
+      // runs on every poll tick regardless of which tab is active, so the
+      // dot stays live even from Search/My Schedule/Settings.
+      setOpenSnipeCount(data.filter((w) => w.watch.last_status).length);
 
       if (newlyOpened.length > 0) {
         setJustOpenedIds(new Set(newlyOpened.map((w) => w.watch.id)));
@@ -69,12 +74,25 @@ export function WatchesPage() {
 
   const { pull, refreshing, threshold } = usePullToRefresh(() => refresh(false), pathname === "/watches");
 
-  async function stopSniping(watchId: string, label: string) {
-    await removeWatch(watchId);
+  async function stopSniping(w: WatchedSection) {
+    const { watch } = w;
+    await removeWatch(watch.id);
     haptic("tap");
-    showToast(`Stopped sniping ${label}`);
+    showToast(`Stopped sniping ${watchLabel(w)}`, "default", {
+      label: "Undo",
+      onClick: async () => {
+        // Re-adds it exactly as it was -- same term/index, and last_status
+        // preserved so a currently-open watch doesn't come back "closed"
+        // and misfire a false "it just opened!" on the next poll.
+        await addWatch({ year: watch.term_year, code: watch.term_code }, watch.index_number, watch.last_status);
+        haptic("confirm");
+        await refresh(false);
+      },
+    });
     await refresh(false);
   }
+
+  const openCount = watched.filter((w) => w.watch.last_status).length;
 
   return (
     <div>
@@ -86,6 +104,19 @@ export function WatchesPage() {
           <div className="skeleton-row" />
           <div className="skeleton-row" />
           <div className="skeleton-row" />
+        </div>
+      )}
+
+      {!loading && watched.length > 0 && (
+        <div className="stat-row">
+          <div className="stat-card">
+            <div className="stat-label">Sniped</div>
+            <div className="stat-value">{watched.length}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Open now</div>
+            <div className={`stat-value ${openCount > 0 ? "green" : ""}`}>{openCount}</div>
+          </div>
         </div>
       )}
 
@@ -104,7 +135,7 @@ export function WatchesPage() {
             section={{ ...section, open: watch.last_status }}
             isWatched
             justOpened={justOpenedIds.has(watch.id)}
-            onToggleWatch={() => stopSniping(watch.id, watchLabel(w))}
+            onToggleWatch={() => stopSniping(w)}
             onClick={() => navigate(`/course/${section.course_id}?year=${watch.term_year}&code=${watch.term_code}`)}
           />
         ) : (
@@ -114,7 +145,7 @@ export function WatchesPage() {
               <p style={{ fontWeight: 700, fontSize: 15 }}>Index {watch.index_number}</p>
               <p className="meta">Course details aren't cached yet — check back after the next catalog refresh.</p>
             </div>
-            <button className="btn btn-danger btn-small" onClick={() => stopSniping(watch.id, watchLabel(w))}>
+            <button className="btn btn-danger btn-small" onClick={() => stopSniping(w)}>
               Stop sniping
             </button>
           </div>

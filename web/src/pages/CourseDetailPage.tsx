@@ -53,7 +53,14 @@ export function CourseDetailPage() {
     if (existingId) {
       await removeWatch(existingId);
       haptic("tap");
-      showToast(`Stopped sniping ${sectionLabel(section)}`);
+      showToast(`Stopped sniping ${sectionLabel(section)}`, "default", {
+        label: "Undo",
+        onClick: async () => {
+          await addWatch(term, section.index_number, section.open);
+          haptic("confirm");
+          await refresh();
+        },
+      });
     } else {
       const hadNoWatchesBefore = (await listWatches()).length === 0;
       await addWatch(term, section.index_number, section.open);

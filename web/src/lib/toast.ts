@@ -2,7 +2,12 @@
 // ever one <ToastHost/>, mounted once in App.tsx -- so any lib or component
 // anywhere in the tree can call showToast() directly, the same way they'd
 // call haptic() from lib/haptics.ts.
-export type Toast = { id: number; message: string; kind: "default" | "success" };
+export type Toast = {
+  id: number;
+  message: string;
+  kind: "default" | "success";
+  action?: { label: string; onClick: () => void };
+};
 
 type Listener = (toasts: Toast[]) => void;
 
@@ -20,12 +25,20 @@ export function subscribeToasts(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-export function showToast(message: string, kind: Toast["kind"] = "default") {
-  const id = nextId++;
-  toasts = [...toasts, { id, message, kind }];
+export function dismissToast(id: number) {
+  toasts = toasts.filter((t) => t.id !== id);
   emit();
-  setTimeout(() => {
-    toasts = toasts.filter((t) => t.id !== id);
-    emit();
-  }, 2400);
+}
+
+export function showToast(
+  message: string,
+  kind: Toast["kind"] = "default",
+  action?: Toast["action"],
+) {
+  const id = nextId++;
+  toasts = [...toasts, { id, message, kind, action }];
+  emit();
+  // A toast with an action (e.g. "Undo") stays up longer -- 2.4s isn't
+  // enough time to read a message AND decide to tap a button on it.
+  setTimeout(() => dismissToast(id), action ? 4500 : 2400);
 }
