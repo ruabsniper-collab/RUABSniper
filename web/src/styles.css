@@ -521,3 +521,154 @@ h3 {
   background: var(--accent);
   color: var(--accent-contrast);
 }
+
+/* Toasts — one-line confirmations for actions that previously had no
+   feedback beyond a button's own state change (sniped, stopped sniping,
+   copied). Fixed above the bottom nav so it reads on every tab. */
+.toast-host {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(66px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.toast {
+  background: var(--text);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  max-width: 92%;
+  text-align: center;
+}
+
+.toast-success {
+  background: var(--green);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-in 0.2s ease-out both;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Skeleton loaders — stand in for "Loading…" text on first load of Search
+   and Watches, shaped roughly like the .section-row they'll become. */
+.skeleton-row {
+  height: 96px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, var(--card-bg) 25%, var(--border) 37%, var(--card-bg) 63%);
+  background-size: 400% 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-row {
+    animation: skeleton-shimmer 1.4s ease infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* The payoff moment: a watched section flips closed -> open on Watches.
+   Plays once (see WatchesPage.tsx's refresh()) as a green flash + a small
+   pop, so the thing this whole app exists for is actually visible instead
+   of just a pill silently changing color. */
+@media (prefers-reduced-motion: no-preference) {
+  .section-row.just-opened {
+    animation: just-opened-flash 1.4s ease-out;
+  }
+}
+
+/* Pull-to-refresh indicator (see lib/usePullToRefresh.ts). Height is driven
+   by pull distance while dragging, so it pushes the page's own content down
+   like a native pull-to-refresh -- no transform/overlay needed. */
+.ptr-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--muted);
+}
+
+.ptr-indicator svg {
+  width: 22px;
+  height: 22px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ptr-indicator.refreshing svg {
+    animation: ptr-spin 0.7s linear infinite;
+  }
+}
+
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Page-level empty states (see components/EmptyState.tsx) */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 40px;
+  padding: 0 20px;
+}
+
+.empty-state-icon {
+  color: var(--border);
+}
+
+.empty-state-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.empty-state .empty-text {
+  margin-top: 0;
+}
+
+@keyframes just-opened-flash {
+  0% {
+    background: var(--green-bg);
+    transform: scale(1.015);
+  }
+  55% {
+    background: var(--green-bg);
+  }
+  100% {
+    background: var(--card-bg);
+    transform: scale(1);
+  }
+}

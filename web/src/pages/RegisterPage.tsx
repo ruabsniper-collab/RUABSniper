@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { haptic } from "../lib/haptics";
 
 const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
 
@@ -20,6 +21,7 @@ export function RegisterPage() {
   async function copyIndex() {
     await navigator.clipboard.writeText(indexNumber);
     setCopied(true);
+    haptic("tap");
     setTimeout(() => setCopied(false), 2000);
   }
 

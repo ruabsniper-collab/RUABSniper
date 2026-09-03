@@ -1,5 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { BottomNav } from "./components/BottomNav";
+import { ToastHost } from "./components/ToastHost";
 import { SearchPage } from "./pages/SearchPage";
 import { CourseDetailPage } from "./pages/CourseDetailPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -47,6 +48,7 @@ export default function App() {
           </Routes>
         )}
       </main>
+      <ToastHost />
       <BottomNav />
     </>
   );

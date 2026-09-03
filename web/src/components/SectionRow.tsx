@@ -21,11 +21,16 @@ export function SectionRow({
   onClick,
   onToggleWatch,
   isWatched,
+  justOpened,
 }: {
   section: SectionWithCourse;
   onClick?: () => void;
   onToggleWatch?: () => void;
   isWatched?: boolean;
+  // True for one render right after this section flips closed -> open on
+  // Watches -- plays a highlight animation for the moment the app exists
+  // for. See WatchesPage.tsx's refresh().
+  justOpened?: boolean;
 }) {
   const navigate = useNavigate();
 
@@ -36,7 +41,11 @@ export function SectionRow({
   }
 
   return (
-    <div className="section-row" onClick={onClick} role={onClick ? "button" : undefined}>
+    <div
+      className={`section-row ${justOpened ? "just-opened" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
       <div className="section-row-header">
         <span className="section-title">
           {section.courses.subject_code}:{section.courses.course_number} · sec {section.section_number}

@@ -8,7 +8,16 @@ import { maybePromptAfterAddingWatch } from "../lib/push";
 import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
 import { SectionRow } from "../components/SectionRow";
 import { NotificationPrompt } from "../components/NotificationPrompt";
+import { EmptyState } from "../components/EmptyState";
+import { PullToRefreshIndicator } from "../components/PullToRefreshIndicator";
+import { haptic } from "../lib/haptics";
+import { showToast } from "../lib/toast";
+import { usePullToRefresh } from "../lib/usePullToRefresh";
 import type { SectionWithCourse } from "../types/db";
+
+function sectionLabel(section: SectionWithCourse): string {
+  return `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
+}
 
 const term = guessCurrentTerm();
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
@@ -104,6 +113,11 @@ export function SearchPage() {
     return () => clearTimeout(handle);
   }, [runSearch]);
 
+  const { pull, refreshing, threshold } = usePullToRefresh(
+    () => Promise.all([runSearch(), refreshWatches()]).then(() => {}),
+    pathname === "/",
+  );
+
   function toggleLocation(value: string) {
     setLocations((prev) => {
       const next = new Set(prev);
@@ -126,9 +140,13 @@ export function SearchPage() {
     const existingId = watchIdByIndex.get(section.index_number);
     if (existingId) {
       await removeWatch(existingId);
+      haptic("tap");
+      showToast(`Stopped sniping ${sectionLabel(section)}`);
     } else {
       const hadNoWatchesBefore = (await listWatches()).length === 0;
       await addWatch(term, section.index_number, section.open);
+      haptic("confirm");
+      showToast(`🎯 Sniping ${sectionLabel(section)}`, "success");
       await maybePromptAfterAddingWatch(hadNoWatchesBefore);
     }
     await refreshWatches();
@@ -136,6 +154,7 @@ export function SearchPage() {
 
   return (
     <div>
+      <PullToRefreshIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
       <NotificationPrompt />
       <p className="hint">{termLabel(term)}</p>
       <input
@@ -263,7 +282,15 @@ export function SearchPage() {
         </>
       )}
 
-      {loading && <p className="hint" style={{ marginTop: 12 }}>Searching…</p>}
+      {loading && results.length === 0 ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="skeleton-row" />
+          <div className="skeleton-row" />
+          <div className="skeleton-row" />
+        </div>
+      ) : (
+        loading && <p className="hint" style={{ marginTop: 12 }}>Searching…</p>
+      )}
       {error && <p className="error-text">{error}</p>}
 
       <div style={{ marginTop: 8 }}>
@@ -277,7 +304,7 @@ export function SearchPage() {
           />
         ))}
         {!loading && results.length === 0 && (
-          <p className="empty-text">No sections match yet — try a different search.</p>
+          <EmptyState icon="search">No sections match yet — try a different search.</EmptyState>
         )}
       </div>
     </div>

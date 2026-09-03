@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta id="theme-color-meta" name="theme-color" content="#cc0033" />
+    <!-- Without these, "Add to Home Screen" on iOS opens the page inside
+         Safari's own chrome (address bar, tab switcher) instead of a real
+         standalone window -- `display: standalone` in manifest.json only
+         covers Android/desktop installs. Push notifications only reach iOS
+         Safari for a page installed to the home screen (see the project
+         memory / README), so a half-standalone install undercuts the whole
+         reason this is a PWA rather than a plain website. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RUAB Sniper" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="manifest" href="/manifest.json" />

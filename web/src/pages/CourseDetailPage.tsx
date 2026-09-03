@@ -4,8 +4,14 @@ import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { maybePromptAfterAddingWatch } from "../lib/push";
 import { SectionRow } from "../components/SectionRow";
+import { haptic } from "../lib/haptics";
+import { showToast } from "../lib/toast";
 import type { SectionWithCourse } from "../types/db";
 import type { Term } from "../lib/term";
+
+function sectionLabel(section: SectionWithCourse): string {
+  return `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
+}
 
 export function CourseDetailPage() {
   const { courseId = "" } = useParams();
@@ -46,9 +52,13 @@ export function CourseDetailPage() {
     const existingId = watchIdByIndex.get(section.index_number);
     if (existingId) {
       await removeWatch(existingId);
+      haptic("tap");
+      showToast(`Stopped sniping ${sectionLabel(section)}`);
     } else {
       const hadNoWatchesBefore = (await listWatches()).length === 0;
       await addWatch(term, section.index_number, section.open);
+      haptic("confirm");
+      showToast(`🎯 Sniping ${sectionLabel(section)}`, "success");
       await maybePromptAfterAddingWatch(hadNoWatchesBefore);
     }
     await refresh();
