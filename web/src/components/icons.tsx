@@ -44,3 +44,25 @@ export function SettingsIcon() {
     </svg>
   );
 }
+
+// Small inline glyphs for SectionRow's meta lines -- meeting time and each
+// instructor row. Thinner stroke (1.5 vs the nav/empty-state icons' 1.75)
+// and no viewBox padding assumptions since these render tiny (14px) next
+// to text, not as a standalone tap target.
+export function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4.5 20c1.4-3.8 4.6-6 7.5-6s6.1 2.2 7.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}

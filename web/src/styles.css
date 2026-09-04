@@ -25,6 +25,12 @@
   --red: #a4133c;
   --yellow-bg: #fff8c5;
   --yellow: #9a6700;
+  /* Headings, big numbers, course codes, and buttons only (see the
+     selectors that use this below) -- everything else stays the system
+     font for speed and native-feeling inputs. Same weight regardless of
+     theme, so this doesn't need repeating in the dark blocks below. */
+  --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 6px rgba(16, 24, 40, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,12 +49,14 @@
     --red: #ff6b87;
     --yellow-bg: #2b2111;
     --yellow: #d29922;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.28);
   }
 }
 
 :root[data-theme="dark"] {
   --accent: #ff4d6d;
   --accent-contrast: #1a0006;
+  --accent-bg: #3d1420;
   --border: #30363d;
   --muted: #8b949e;
   --text: #e6edf3;
@@ -60,6 +68,7 @@
   --red: #ff6b87;
   --yellow-bg: #2b2111;
   --yellow: #d29922;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -240,8 +249,9 @@ body {
 }
 
 .stat-value {
+  font-family: var(--font-display);
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 700;
   margin-top: 2px;
 }
 
@@ -272,6 +282,7 @@ body {
 h1,
 h2,
 h3 {
+  font-family: var(--font-display);
   margin: 0 0 8px;
 }
 
@@ -359,6 +370,7 @@ h3 {
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--shadow-card);
   padding: 12px;
   margin-bottom: 10px;
 }
@@ -375,10 +387,19 @@ h3 {
   gap: 4px;
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--shadow-card);
   padding: 12px;
   margin-bottom: 10px;
   background: var(--card-bg);
   cursor: pointer;
+}
+
+/* Left-edge accent stripe on an open section -- readable peripherally
+   while scrolling, not just from the pill up in the corner. Nudges the
+   row's own left padding to keep everything else's alignment unchanged. */
+.section-row-open {
+  border-left: 3px solid var(--green);
+  padding-left: 10px;
 }
 
 .section-row-header {
@@ -388,8 +409,30 @@ h3 {
 }
 
 .section-title {
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
+}
+
+/* The course title -- one step up from the plain .meta lines below it
+   (index, instructor, meeting time): it's the one line that says what
+   this actually is, everything after is filtering detail. */
+.meta-primary {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+}
+
+.meta-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.meta-icon svg {
+  width: 13px;
+  height: 13px;
 }
 
 .pill {
@@ -451,6 +494,7 @@ h3 {
 }
 
 .btn {
+  font-family: var(--font-display);
   border: none;
   border-radius: 8px;
   padding: 10px 14px;
@@ -578,7 +622,8 @@ h3 {
 }
 
 .index-number {
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-size: 20px;
   font-weight: 700;
 }
 

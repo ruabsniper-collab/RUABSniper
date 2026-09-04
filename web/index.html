@@ -17,6 +17,17 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- Space Grotesk for headings/big numbers/course codes/buttons only
+         (see styles.css's --font-display) -- body text stays the system
+         font stack for speed and native input rendering. Preconnect first
+         since this is render-blocking for anything using --font-display,
+         same as any webfont. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
     <title>RUAB Sniper</title>
     <script>
       // Applies the saved light/dark/system choice before first paint, so
