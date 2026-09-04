@@ -29,9 +29,24 @@ export function RegisterPage() {
   // falls back to its own "most recent term" guess.
   const yearParam = searchParams.get("year");
   const codeParam = searchParams.get("code");
-  const [copied, setCopied] = useState(false);
+  // SectionRow's "Open WebReg" button now copies the index itself before
+  // navigating here (see its own comment) and flags that with ?copied=1 --
+  // start already showing "Copied!" instead of "Copy index" so the button
+  // doesn't lie about work that already happened one tap ago. Absent (and
+  // still copy-on-first-tap here) for the notification-tap path, where
+  // there's no earlier tap to have done it during.
+  const [copied, setCopied] = useState(searchParams.get("copied") === "1");
   const [section, setSection] = useState<SectionWithCourse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Single place the "Copied!" -> "Copy index" reset happens, regardless of
+  // whether `copied` became true from arriving pre-copied above or from
+  // tapping the button below.
+  useEffect(() => {
+    if (!copied) return;
+    const handle = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(handle);
+  }, [copied]);
 
   // This page is reached from a push notification tap as often as from an
   // in-app button (see sw.js's notificationclick + backend/lib/pollOnce.ts)
@@ -69,7 +84,6 @@ export function RegisterPage() {
       await navigator.clipboard.writeText(indexNumber);
       setCopied(true);
       haptic("tap");
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard access can fail (permissions, insecure context, an
       // unfocused document) -- the index is right there on screen either

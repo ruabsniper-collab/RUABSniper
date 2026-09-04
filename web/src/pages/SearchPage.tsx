@@ -3,7 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
-import { getActiveSchedule, type ScheduleBlock } from "../lib/schedule";
+import {
+  getActiveSchedule,
+  listSchedules,
+  setActiveScheduleId as persistActiveScheduleId,
+  type ScheduleBlock,
+  type ScheduleSet,
+} from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
 import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
 import { SectionRow } from "../components/SectionRow";
@@ -45,6 +51,8 @@ export function SearchPage() {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [hideConflicts, setHideConflicts] = useState(false);
   const [travelBuffer, setTravelBuffer] = useState(30); // minutes; 0 = off
+  const [schedules, setSchedules] = useState<ScheduleSet[]>([]);
+  const [activeScheduleId, setActiveScheduleId] = useState("");
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
   const [scheduleName, setScheduleName] = useState("");
   const [results, setResults] = useState<SectionWithCourse[]>([]);
@@ -86,11 +94,27 @@ export function SearchPage() {
   // not touching query/results state when you're not on this tab.
   useEffect(() => {
     if (pathname !== "/") return;
+    setSchedules(listSchedules());
     const active = getActiveSchedule();
+    setActiveScheduleId(active.id);
     setMySchedule(active.blocks);
     setScheduleName(active.name);
     refreshWatches();
   }, [pathname, refreshWatches]);
+
+  // Switching which schedule Search checks conflicts against used to mean
+  // leaving this tab, changing it in My Schedule, and coming back -- real
+  // friction for exactly the case My Schedule's multi-schedule support
+  // exists for (your own classes plus a friend's you're sniping for). This
+  // lets it happen inline without leaving Search.
+  function handleScheduleChange(id: string) {
+    persistActiveScheduleId(id);
+    const active = getActiveSchedule();
+    setActiveScheduleId(active.id);
+    setMySchedule(active.blocks);
+    setScheduleName(active.name);
+    haptic("tap");
+  }
 
   const runSearch = useCallback(async () => {
     if (!hasAnyFilter) {
@@ -245,6 +269,24 @@ export function SearchPage() {
           <span className="filter-label">Include instructors with no RMP match</span>
           <input type="checkbox" checked={includeUnrated} onChange={(e) => setIncludeUnrated(e.target.checked)} />
         </label>
+      )}
+
+      {schedules.length > 1 && (
+        <div className="filter-row">
+          <span className="filter-label">Schedule to check conflicts against</span>
+          <select
+            className="input"
+            style={{ width: "auto", marginTop: 6 }}
+            value={activeScheduleId}
+            onChange={(e) => handleScheduleChange(e.target.value)}
+          >
+            {schedules.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <label className="switch-row">
