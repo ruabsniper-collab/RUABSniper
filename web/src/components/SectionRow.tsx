@@ -22,6 +22,18 @@ export function meetingSummary(section: SectionWithCourse): string {
   return section.meeting_times.map(meetingLabel).join(", ");
 }
 
+// Credits were already ingested onto Course (see types/db.ts) and used
+// internally by scheduleOcr.ts to recognize where a course-code block ends
+// in a screenshot, but never actually shown anywhere. Rutgers has
+// fractional/variable-credit courses (1.5, 0.5, etc.), so this keeps
+// whatever precision the catalog gives rather than rounding. Exported for
+// the same reason meetingSummary is -- RegisterPage and CourseDetailPage
+// show the same course info and shouldn't format it differently.
+export function creditsLabel(credits: number | null): string | null {
+  if (credits == null) return null;
+  return `${credits} credit${credits === 1 ? "" : "s"}`;
+}
+
 export function SectionRow({
   section,
   onClick,
@@ -83,7 +95,10 @@ export function SectionRow({
       {/* Course title reads at a step up from the metadata below it (index,
           instructor, time) -- it's the one line that actually says what
           this is, the rest is filtering detail once you already know that. */}
-      <p className="meta-primary">{section.courses.title}</p>
+      <p className="meta-primary">
+        {section.courses.title}
+        {creditsLabel(section.courses.credits) && ` · ${creditsLabel(section.courses.credits)}`}
+      </p>
       <p className="meta">Index {section.index_number}</p>
       {section.instructors.length === 0 ? (
         <div className="card-row" style={{ gap: 6, marginTop: 2 }}>

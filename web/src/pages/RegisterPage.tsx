@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import { getSectionByIndex } from "../lib/courses";
-import { meetingSummary } from "../components/SectionRow";
+import { creditsLabel, meetingSummary } from "../components/SectionRow";
 import { RatingBadge } from "../components/RatingBadge";
 import type { SectionWithCourse } from "../types/db";
 import type { Term } from "../lib/term";
@@ -116,7 +116,10 @@ export function RegisterPage() {
               {section.open ? "OPEN" : "CLOSED"}
             </span>
           </div>
-          <p className="meta">Section {section.section_number}</p>
+          <p className="meta">
+            Section {section.section_number}
+            {creditsLabel(section.courses.credits) && ` · ${creditsLabel(section.courses.credits)}`}
+          </p>
           {section.instructors.length === 0 ? (
             <p className="meta">Staff</p>
           ) : (

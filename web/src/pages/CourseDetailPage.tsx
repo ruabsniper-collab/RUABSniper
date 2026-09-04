@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { maybePromptAfterAddingWatch } from "../lib/push";
-import { SectionRow } from "../components/SectionRow";
+import { SectionRow, creditsLabel } from "../components/SectionRow";
 import { EmptyState } from "../components/EmptyState";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
@@ -89,6 +89,9 @@ export function CourseDetailPage() {
             {sections[0].courses.subject_code}:{sections[0].courses.course_number} —{" "}
             {sections[0].courses.title}
           </h2>
+          {creditsLabel(sections[0].courses.credits) && (
+            <p className="meta">{creditsLabel(sections[0].courses.credits)}</p>
+          )}
           {sections[0].courses.core_codes.length > 0 && (
             <p className="meta">Core: {sections[0].courses.core_codes.join(", ")}</p>
           )}
