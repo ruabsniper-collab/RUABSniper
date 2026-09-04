@@ -149,6 +149,22 @@ export function deleteSchedule(id: string): ScheduleSet[] {
   return next;
 }
 
+/**
+ * Overwrites the entire schedule list + active pointer with an exact prior
+ * snapshot -- the undo for deleteSchedule(). Reconstructing a deleted
+ * schedule by calling createSchedule()+addScheduleBlock() for each block
+ * (the obvious approach) has a real edge case: deleteSchedule() always
+ * leaves at least one schedule behind, so deleting your only/last one
+ * auto-creates a blank replacement first -- then a create-based "undo"
+ * adds a *second* one on top of it, both named the same thing. A wholesale
+ * snapshot restore sidesteps that entirely by returning to the exact
+ * pre-delete state, placeholder and all.
+ */
+export function restoreSchedules(sets: ScheduleSet[], activeId: string): void {
+  writeSets(sets);
+  setActiveScheduleId(activeId);
+}
+
 export function addScheduleBlock(block: Omit<ScheduleBlock, "id">): ScheduleBlock[] {
   const sets = listSchedules();
   const activeId = getActiveScheduleId();
