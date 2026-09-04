@@ -3,6 +3,7 @@ import type { SectionWithCourse } from "../types/db";
 import { RatingBadge } from "./RatingBadge";
 import { ClockIcon, PersonIcon } from "./icons";
 import { DAY_LABELS, formatMilitaryTime } from "../lib/time";
+import { haptic } from "../lib/haptics";
 
 // A campus of "ONLINE" with no day/time is asynchronous (no live meeting) —
 // see isAsyncMeeting()'s comment in lib/courses.ts for how that was verified.
@@ -39,15 +40,29 @@ export function SectionRow({
 }) {
   const navigate = useNavigate();
 
-  function openWebReg(e: React.MouseEvent) {
+  async function openWebReg(e: React.MouseEvent) {
     e.stopPropagation();
     const label = `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
+    // The button says "with index copied" -- actually copy it, right here,
+    // before navigating, instead of just linking to a page where you still
+    // have to tap "Copy index" yourself. Best-effort: a clipboard failure
+    // (permissions, unfocused document) shouldn't block getting to
+    // Register at all, it just means the copied=1 flag below is skipped so
+    // RegisterPage's own "Copy index" button is still there to try again.
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(section.index_number);
+      copied = true;
+      haptic("tap");
+    } catch {
+      // fall through -- RegisterPage's own Copy index button is the retry
+    }
     // year/code let RegisterPage fetch this exact section instead of
     // guessing "whichever term has this index number most recently" --
     // see getSectionByIndex's comment for why that guess is a real risk
     // once more than one term is active at once, which is now normal.
     navigate(
-      `/register?index=${section.index_number}&label=${encodeURIComponent(label)}&year=${section.term_year}&code=${section.term_code}`,
+      `/register?index=${section.index_number}&label=${encodeURIComponent(label)}&year=${section.term_year}&code=${section.term_code}${copied ? "&copied=1" : ""}`,
     );
   }
 
