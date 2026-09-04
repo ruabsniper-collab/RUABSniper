@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
-import { guessCurrentTerm, termLabel } from "../lib/term";
+import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { getActiveSchedule, type ScheduleBlock } from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
@@ -19,12 +19,20 @@ function sectionLabel(section: SectionWithCourse): string {
   return `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
 }
 
-const term = guessCurrentTerm();
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
+const TERM_OPTIONS = termOptions();
 
 export function SearchPage() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // A real, user-controlled term instead of a single hardcoded guess --
+  // see lib/term.ts's termOptions() comment for why: the old version
+  // locked the whole app to whatever guessCurrentTerm() returned, with no
+  // way to search or snipe any other term, which meant Spring was entirely
+  // unreachable during exactly the Nov-Dec window its own registration
+  // rush happens in. Falls back to the last term explicitly picked here
+  // (if it's still current) before guessing fresh.
+  const [term, setTerm] = useState<Term>(() => loadTermPreference() ?? guessCurrentTerm());
   const [query, setQuery] = useState("");
   const [minRating, setMinRating] = useState<number | null>(null);
   const [includeUnrated, setIncludeUnrated] = useState(true);
@@ -50,7 +58,7 @@ export function SearchPage() {
     const relevant = watches.filter((w) => w.term_year === term.year && w.term_code === term.code);
     setWatchedIndexes(new Set(relevant.map((w) => w.index_number)));
     setWatchIdByIndex(new Map(relevant.map((w) => [w.index_number, w.id])));
-  }, []);
+  }, [term]);
 
   // This tab never unmounts (see App.tsx) -- a plain mount-time effect would
   // only ever run once, missing anything added to My Schedule or changed in
@@ -94,6 +102,7 @@ export function SearchPage() {
       setLoading(false);
     }
   }, [
+    term,
     query,
     minRating,
     includeUnrated,
@@ -117,6 +126,13 @@ export function SearchPage() {
     () => Promise.all([runSearch(), refreshWatches()]).then(() => {}),
     pathname === "/",
   );
+
+  function handleTermChange(key: string) {
+    const next = TERM_OPTIONS.find((t) => termKey(t) === key);
+    if (!next) return;
+    setTerm(next);
+    saveTermPreference(next);
+  }
 
   function toggleLocation(value: string) {
     setLocations((prev) => {
@@ -163,7 +179,18 @@ export function SearchPage() {
     <div>
       <PullToRefreshIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
       <NotificationPrompt />
-      <p className="hint">{termLabel(term)}</p>
+      <select
+        className="input"
+        style={{ width: "auto", marginBottom: 10 }}
+        value={termKey(term)}
+        onChange={(e) => handleTermChange(e.target.value)}
+      >
+        {TERM_OPTIONS.map((t) => (
+          <option key={termKey(t)} value={termKey(t)}>
+            {termLabel(t)}
+          </option>
+        ))}
+      </select>
       <input
         className="input"
         placeholder="Search by name, subject, course #, or core code (e.g. WCr)"
