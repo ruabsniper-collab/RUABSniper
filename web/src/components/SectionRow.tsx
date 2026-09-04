@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { SectionWithCourse } from "../types/db";
 import { RatingBadge } from "./RatingBadge";
+import { ClockIcon, PersonIcon } from "./icons";
 import { DAY_LABELS, formatMilitaryTime } from "../lib/time";
 
 // A campus of "ONLINE" with no day/time is asynchronous (no live meeting) —
@@ -46,7 +47,7 @@ export function SectionRow({
 
   return (
     <div
-      className={`section-row ${justOpened ? "just-opened" : ""}`}
+      className={`section-row ${section.open ? "section-row-open" : ""} ${justOpened ? "just-opened" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
     >
@@ -58,13 +59,26 @@ export function SectionRow({
           {section.open ? "OPEN" : "CLOSED"}
         </span>
       </div>
-      <p className="meta">{section.courses.title}</p>
+      {/* Course title reads at a step up from the metadata below it (index,
+          instructor, time) -- it's the one line that actually says what
+          this is, the rest is filtering detail once you already know that. */}
+      <p className="meta-primary">{section.courses.title}</p>
       <p className="meta">Index {section.index_number}</p>
       {section.instructors.length === 0 ? (
-        <p className="meta">Staff</p>
+        <div className="card-row" style={{ gap: 6, marginTop: 2 }}>
+          <span className="meta-icon">
+            <PersonIcon />
+          </span>
+          <span className="meta" style={{ flex: 1 }}>
+            Staff
+          </span>
+        </div>
       ) : (
         section.instructors.map((name, i) => (
           <div key={i} className="card-row" style={{ gap: 6, marginTop: 2 }}>
+            <span className="meta-icon">
+              <PersonIcon />
+            </span>
             <span className="meta" style={{ flex: 1 }}>
               {name}
             </span>
@@ -76,7 +90,14 @@ export function SectionRow({
           </div>
         ))
       )}
-      <p className="meta">{meetingSummary(section)}</p>
+      <div className="card-row" style={{ gap: 6, marginTop: 2 }}>
+        <span className="meta-icon">
+          <ClockIcon />
+        </span>
+        <p className="meta" style={{ margin: 0 }}>
+          {meetingSummary(section)}
+        </p>
+      </div>
       <div className="section-footer">
         {onToggleWatch && (
           <button
