@@ -119,7 +119,12 @@ export async function pollOnce(): Promise<PollResult> {
         await sendPushToDevice(w.device_id, {
           title: "A seat opened up!",
           body: label,
-          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
+          // year/code let RegisterPage fetch this exact section instead of
+          // guessing "whichever term has this index number most recently"
+          // -- see web/src/lib/courses.ts's getSectionByIndex comment for
+          // why that guess is a real risk once more than one term is
+          // active at once (now normal, since Search added a term picker).
+          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}&year=${w.term_year}&code=${w.term_code}`,
         });
       }
     } else if (!isOpenNow && w.last_status) {

@@ -42,7 +42,13 @@ export function SectionRow({
   function openWebReg(e: React.MouseEvent) {
     e.stopPropagation();
     const label = `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
-    navigate(`/register?index=${section.index_number}&label=${encodeURIComponent(label)}`);
+    // year/code let RegisterPage fetch this exact section instead of
+    // guessing "whichever term has this index number most recently" --
+    // see getSectionByIndex's comment for why that guess is a real risk
+    // once more than one term is active at once, which is now normal.
+    navigate(
+      `/register?index=${section.index_number}&label=${encodeURIComponent(label)}&year=${section.term_year}&code=${section.term_code}`,
+    );
   }
 
   return (
