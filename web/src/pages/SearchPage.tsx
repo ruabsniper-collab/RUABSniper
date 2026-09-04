@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { searchCourses, LOCATION_OPTIONS } from "../lib/courses";
+import { browseOpenSections, searchCourses, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import {
@@ -61,14 +61,11 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Whether there's anything to actually search on. Without this, opening
-  // Search cold ran searchCourses() with a blank query, which applies no
-  // filter at all beyond term -- fetching (and rendering) up to 200 courses'
-  // worth of sections nobody asked for, every single time, before anyone's
-  // typed or tapped anything. Real Supabase reads too, worth avoiding given
-  // this project's zero-cost design. A single filter of any kind (not just
-  // typed text -- "show me what's open at Busch" with an empty query box is
-  // a legitimate search) is enough to run a real query.
+  // Whether there's a real, targeted search to run vs. just showing the
+  // bounded "some open sections" default (browseOpenSections, see
+  // lib/courses.ts) -- a single filter of any kind (not just typed text --
+  // "show me what's open at Busch" with an empty query box is a legitimate
+  // search) is enough to count as one.
   const hasAnyFilter =
     query.trim() !== "" ||
     minRating != null ||
@@ -117,33 +114,29 @@ export function SearchPage() {
   }
 
   const runSearch = useCallback(async () => {
-    if (!hasAnyFilter) {
-      setResults([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      const data = await searchCourses({
-        term,
-        query,
-        minRating: minRating ?? undefined,
-        includeUnratedWhenFiltering: includeUnrated,
-        requireRmpMatch,
-        sortByRating,
-        locations: locations.size > 0 ? [...locations] : undefined,
-        hideScheduleConflicts: hideConflicts,
-        mySchedule,
-        travelBufferMinutes: travelBuffer,
-        days: filterDays.size > 0 ? [...filterDays] : undefined,
-        // Left as typed until it actually parses -- e.g. "9:0" mid-keystroke
-        // just doesn't apply a bound yet rather than erroring, same
-        // leniency as any other free-text filter input.
-        earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
-        latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
-      });
+      const data = !hasAnyFilter
+        ? await browseOpenSections(term)
+        : await searchCourses({
+            term,
+            query,
+            minRating: minRating ?? undefined,
+            includeUnratedWhenFiltering: includeUnrated,
+            requireRmpMatch,
+            sortByRating,
+            locations: locations.size > 0 ? [...locations] : undefined,
+            hideScheduleConflicts: hideConflicts,
+            mySchedule,
+            travelBufferMinutes: travelBuffer,
+            days: filterDays.size > 0 ? [...filterDays] : undefined,
+            // Left as typed until it actually parses -- e.g. "9:0" mid-keystroke
+            // just doesn't apply a bound yet rather than erroring, same
+            // leniency as any other free-text filter input.
+            earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
+            latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
+          });
       setResults(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed");
@@ -396,6 +389,11 @@ export function SearchPage() {
       {error && <p className="error-text">{error}</p>}
 
       <div style={{ marginTop: 8 }}>
+        {!loading && !hasAnyFilter && results.length > 0 && (
+          <p className="hint" style={{ marginBottom: 8 }}>
+            Some open sections for {termLabel(term)} — search above to narrow it down.
+          </p>
+        )}
         {results.map((item) => (
           <SectionRow
             key={item.id}
@@ -407,8 +405,8 @@ export function SearchPage() {
         ))}
         {!loading && !hasAnyFilter && results.length === 0 && (
           <EmptyState icon="search">
-            Type a course name, subject, core code, or index number above — or use a filter below — to
-            search {termLabel(term)}.
+            No open sections to show yet for {termLabel(term)}. Type a course name, subject, core code, or
+            index number above — or use a filter below.
           </EmptyState>
         )}
         {!loading && hasAnyFilter && results.length === 0 && (

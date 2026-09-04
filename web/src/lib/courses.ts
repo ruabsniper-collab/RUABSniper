@@ -239,6 +239,55 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
   return sections;
 }
 
+/**
+ * A bounded, useful default for Search's empty state -- some currently
+ * open sections for the term, shown before anyone's typed or tapped a
+ * filter. Replaces two worse defaults tried in this same spot: the
+ * original unfiltered catalog dump (up to 200 courses' worth of sections,
+ * most of it repetitive placeholder "independent study" entries, real
+ * Supabase reads on every cold load) turned out to be missed once removed
+ * -- but a bare "type to search" prompt with nothing to look at wasn't a
+ * good trade either. Open sections specifically, since that's the one
+ * thing actually actionable in a sniping app, and capped low enough
+ * (`limit`) that this stays cheap regardless of how big the catalog gets.
+ */
+export async function browseOpenSections(term: Term, limit = 24): Promise<SectionWithCourse[]> {
+  const { data: sectionRows, error } = await supabase
+    .from("sections")
+    .select("*, courses(*)")
+    .eq("term_year", term.year)
+    .eq("term_code", term.code)
+    .eq("open", true)
+    .limit(limit);
+  if (error) throw error;
+
+  let sections: SectionWithCourse[] = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
+    ...row,
+    courses: row.courses,
+  }));
+
+  const instructorNames = new Set<string>();
+  for (const s of sections) for (const i of s.instructors) instructorNames.add(normalizeInstructorName(i));
+
+  if (instructorNames.size > 0) {
+    const { data: ratings, error: ratingsErr } = await supabase
+      .from("professor_rmp_matches")
+      .select("*")
+      .in("instructor_name", [...instructorNames]);
+    if (ratingsErr) throw ratingsErr;
+    const ratingsByName = new Map<string, ProfessorRmpMatch>(
+      (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),
+    );
+    sections = sections.map((s) => ({
+      ...s,
+      professorRating: bestRatingFor(s.instructors, ratingsByName),
+      professorRatings: ratingsForInstructors(s.instructors, ratingsByName),
+    }));
+  }
+
+  return sections;
+}
+
 /** All sections for one course, with RMP ratings attached — used by CourseDetailPage. */
 export async function getCourseSections(courseId: string): Promise<SectionWithCourse[]> {
   const { data: course, error: courseErr } = await supabase
