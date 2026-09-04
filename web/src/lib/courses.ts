@@ -25,6 +25,14 @@ export const LOCATION_OPTIONS: { value: string; label: string }[] = [
 ];
 const ASYNC_LOCATION_VALUE = "ASYNCHRONOUS";
 
+// Verified against a live pull of the real Fall 2026 catalog rather than
+// assumed: exactly these values (plus null, handled separately -- some
+// courses genuinely have no fixed credit value) actually occur. Heavily
+// weighted toward 3 and 4, but 0-credit and 6-credit are common enough
+// (54 and 30 courses respectively, of ~900 total) to be worth a real
+// option rather than lumping them into "other".
+export const CREDITS_OPTIONS: number[] = [0, 1, 1.5, 2, 2.5, 3, 4, 6];
+
 export type SearchFilters = {
   term: Term;
   query?: string; // free text: title, subject name, subject/course number, or a core code
@@ -33,6 +41,7 @@ export type SearchFilters = {
   requireRmpMatch?: boolean; // drop any section whose professor has no confident RMP match at all
   sortByRating?: boolean; // highest-rated professor first; unrated/no-match sections sink to the bottom
   locations?: string[]; // values from LOCATION_OPTIONS, OR'd together against a section's meeting_times
+  credits?: number; // exact match against Course.credits -- CREDITS_OPTIONS above
   hideScheduleConflicts?: boolean;
   mySchedule?: ScheduleBlock[];
   travelBufferMinutes?: number; // also flag a same-day, different-campus gap smaller than this as a conflict (0/undefined = off)
@@ -146,6 +155,10 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
       .select("*, sections(*)")
       .eq("term_year", term.year)
       .eq("term_code", term.code);
+
+    if (filters.credits != null) {
+      courseQuery = courseQuery.eq("credits", filters.credits);
+    }
 
     if (q) {
       if (/^[A-Z]{2,6}$/i.test(q)) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { browseOpenSections, searchCourses, LOCATION_OPTIONS } from "../lib/courses";
+import { browseOpenSections, searchCourses, CREDITS_OPTIONS, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import {
@@ -12,7 +12,7 @@ import {
 } from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
 import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
-import { SectionRow } from "../components/SectionRow";
+import { SectionRow, creditsLabel } from "../components/SectionRow";
 import { NotificationPrompt } from "../components/NotificationPrompt";
 import { EmptyState } from "../components/EmptyState";
 import { PullToRefreshIndicator } from "../components/PullToRefreshIndicator";
@@ -41,6 +41,7 @@ export function SearchPage() {
   const [term, setTerm] = useState<Term>(() => loadTermPreference() ?? guessCurrentTerm());
   const [query, setQuery] = useState("");
   const [minRating, setMinRating] = useState<number | null>(null);
+  const [creditsFilter, setCreditsFilter] = useState<number | null>(null);
   const [includeUnrated, setIncludeUnrated] = useState(true);
   const [requireRmpMatch, setRequireRmpMatch] = useState(false);
   const [sortByRating, setSortByRating] = useState(false);
@@ -69,6 +70,7 @@ export function SearchPage() {
   const hasAnyFilter =
     query.trim() !== "" ||
     minRating != null ||
+    creditsFilter != null ||
     requireRmpMatch ||
     sortByRating ||
     locations.size > 0 ||
@@ -123,6 +125,7 @@ export function SearchPage() {
             term,
             query,
             minRating: minRating ?? undefined,
+            credits: creditsFilter ?? undefined,
             includeUnratedWhenFiltering: includeUnrated,
             requireRmpMatch,
             sortByRating,
@@ -148,6 +151,7 @@ export function SearchPage() {
     term,
     query,
     minRating,
+    creditsFilter,
     includeUnrated,
     requireRmpMatch,
     sortByRating,
@@ -252,6 +256,31 @@ export function SearchPage() {
               onClick={() => setMinRating(r)}
             >
               {r == null ? "Any" : `${r}+`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="filter-row">
+        <span className="filter-label">Credits</span>
+        <div className="chip-row">
+          <button
+            className={`chip ${creditsFilter == null ? "active" : ""}`}
+            onClick={() => setCreditsFilter(null)}
+          >
+            Any
+          </button>
+          {/* Exact match, not "at least" -- someone filtering by credits
+              usually needs a specific number to fill a specific gap in
+              their schedule, not a minimum. Values verified against the
+              real catalog, see CREDITS_OPTIONS in lib/courses.ts. */}
+          {CREDITS_OPTIONS.map((c) => (
+            <button
+              key={c}
+              className={`chip ${creditsFilter === c ? "active" : ""}`}
+              onClick={() => setCreditsFilter(c)}
+            >
+              {creditsLabel(c)}
             </button>
           ))}
         </div>
