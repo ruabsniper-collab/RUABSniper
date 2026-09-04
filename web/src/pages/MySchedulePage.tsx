@@ -8,6 +8,7 @@ import {
   loadMySchedule,
   removeScheduleBlock,
   renameSchedule,
+  restoreSchedules,
   setActiveScheduleId,
   type ScheduleBlock,
   type ScheduleSet,
@@ -15,6 +16,8 @@ import {
 import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
 import { CAMPUS_PICKER_OPTIONS } from "../lib/campus";
 import { ScreenshotImport } from "../components/ScreenshotImport";
+import { haptic } from "../lib/haptics";
+import { showToast } from "../lib/toast";
 
 const DAYS = ["M", "T", "W", "H", "F"];
 
@@ -67,13 +70,32 @@ export function MySchedulePage() {
     refresh();
   }
 
+  // Instant delete + an Undo toast, same pattern as unsniping (see
+  // WatchesPage/SearchPage) -- no more window.confirm(), which was the one
+  // place left in the whole app that broke out to a plain, unstyled browser
+  // dialog instead of the app's own UI. Undo restores a full snapshot of
+  // the schedule list + active pointer taken right before deleting, rather
+  // than recreating just the one deleted schedule -- deleteSchedule()
+  // always leaves at least one schedule behind, so deleting your only one
+  // auto-creates a blank replacement first, and a create-based "undo"
+  // would stack a second one on top of it instead of cleanly reversing.
   function handleDeleteSchedule() {
     if (!activeSchedule) return;
-    const label = activeSchedule.blocks.length > 0 ? ` and its ${activeSchedule.blocks.length} class(es)` : "";
-    if (!window.confirm(`Delete "${activeSchedule.name}"${label}? This can't be undone.`)) return;
+    const priorSets = schedules;
+    const priorActiveId = activeId;
+    const deletedName = activeSchedule.name;
     deleteSchedule(activeId);
     setRenaming(false);
     refresh();
+    haptic("tap");
+    showToast(`Deleted "${deletedName}"`, "default", {
+      label: "Undo",
+      onClick: () => {
+        restoreSchedules(priorSets, priorActiveId);
+        haptic("confirm");
+        refresh();
+      },
+    });
   }
 
   function submit() {
@@ -84,9 +106,32 @@ export function MySchedulePage() {
     setError(null);
     addScheduleBlock({ label: label.trim(), day, start: startMilitary, end: endMilitary, campus: campus || undefined });
     refresh();
+    haptic("confirm");
+    showToast(`Added ${label.trim()} to ${activeSchedule?.name ?? "schedule"}`, "success");
     setLabel("");
     setStart("");
     setEnd("");
+  }
+
+  function removeBlock(block: ScheduleBlock) {
+    removeScheduleBlock(block.id);
+    refresh();
+    haptic("tap");
+    showToast(`Removed ${block.label}`, "default", {
+      label: "Undo",
+      onClick: () => {
+        addScheduleBlock({
+          label: block.label,
+          day: block.day,
+          start: block.start,
+          end: block.end,
+          courseKey: block.courseKey,
+          campus: block.campus,
+        });
+        haptic("confirm");
+        refresh();
+      },
+    });
   }
 
   return (
@@ -145,13 +190,7 @@ export function MySchedulePage() {
                 {DAY_LABELS[item.day]} {formatMilitaryTime(item.start)} – {formatMilitaryTime(item.end)}
               </p>
             </div>
-            <button
-              className="btn btn-danger btn-small"
-              onClick={() => {
-                removeScheduleBlock(item.id);
-                refresh();
-              }}
-            >
+            <button className="btn btn-danger btn-small" onClick={() => removeBlock(item)}>
               Remove
             </button>
           </div>
