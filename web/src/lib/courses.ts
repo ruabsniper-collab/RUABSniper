@@ -117,37 +117,58 @@ function ratingsForInstructors(
 
 export async function searchCourses(filters: SearchFilters): Promise<SectionWithCourse[]> {
   const { term, query } = filters;
-
-  let courseQuery = supabase
-    .from("courses")
-    .select("*, sections(*)")
-    .eq("term_year", term.year)
-    .eq("term_code", term.code);
-
   const q = query?.trim();
-  if (q) {
-    if (/^[A-Z]{2,6}$/i.test(q)) {
-      // Looks like a core code (e.g. "WCr", "QQ", "HST") — match core codes
-      // OR fall through to a normal text search too, since a short code
-      // could also just be someone typing a subject abbreviation.
-      courseQuery = courseQuery.or(
-        `core_codes.cs.{${q.toUpperCase()}},title.ilike.%${q}%,subject_description.ilike.%${q}%`,
-      );
-    } else if (/^\d{1,3}$/.test(q)) {
-      // Looks like a subject or course number.
-      courseQuery = courseQuery.or(`subject_code.eq.${q.padStart(3, "0")},course_number.eq.${q}`);
-    } else {
-      courseQuery = courseQuery.or(`title.ilike.%${q}%,subject_description.ilike.%${q}%`);
+
+  let sections: SectionWithCourse[];
+
+  if (q && /^\d{4,6}$/.test(q)) {
+    // Looks like an index number (real ones run 4-6 digits -- e.g. 17843,
+    // 21069) rather than a 1-3 digit subject/course number below. Index
+    // numbers live on *sections*, not courses, so the courses-table query
+    // in the branch below can never match one no matter how it's built --
+    // searching sections directly here is the only path that actually
+    // works. Exact match only: someone typing a real index number wants
+    // that exact section, not a fuzzy list.
+    const { data: sectionRows, error: sectionsErr } = await supabase
+      .from("sections")
+      .select("*, courses(*)")
+      .eq("term_year", term.year)
+      .eq("term_code", term.code)
+      .eq("index_number", q);
+    if (sectionsErr) throw sectionsErr;
+    sections = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
+      ...row,
+      courses: row.courses,
+    }));
+  } else {
+    let courseQuery = supabase
+      .from("courses")
+      .select("*, sections(*)")
+      .eq("term_year", term.year)
+      .eq("term_code", term.code);
+
+    if (q) {
+      if (/^[A-Z]{2,6}$/i.test(q)) {
+        // Looks like a core code (e.g. "WCr", "QQ", "HST") — match core codes
+        // OR fall through to a normal text search too, since a short code
+        // could also just be someone typing a subject abbreviation.
+        courseQuery = courseQuery.or(
+          `core_codes.cs.{${q.toUpperCase()}},title.ilike.%${q}%,subject_description.ilike.%${q}%`,
+        );
+      } else if (/^\d{1,3}$/.test(q)) {
+        // Looks like a subject or course number.
+        courseQuery = courseQuery.or(`subject_code.eq.${q.padStart(3, "0")},course_number.eq.${q}`);
+      } else {
+        courseQuery = courseQuery.or(`title.ilike.%${q}%,subject_description.ilike.%${q}%`);
+      }
     }
+
+    const { data, error } = await courseQuery.limit(200);
+    if (error) throw error;
+
+    const courses = (data ?? []) as (Course & { sections: Section[] })[];
+    sections = courses.flatMap((c) => (c.sections ?? []).map((s) => ({ ...s, courses: c })));
   }
-
-  const { data, error } = await courseQuery.limit(200);
-  if (error) throw error;
-
-  const courses = (data ?? []) as (Course & { sections: Section[] })[];
-  let sections: SectionWithCourse[] = courses.flatMap((c) =>
-    (c.sections ?? []).map((s) => ({ ...s, courses: c })),
-  );
 
   // Attach RMP ratings.
   const instructorNames = new Set<string>();
@@ -259,25 +280,29 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
 }
 
 /**
- * One section's full detail by index number alone -- what RegisterPage
- * needs. Reached two ways: an in-app tap (which knows the term) and a push
- * notification's direct link (which only ever carries `?index=`, see
- * backend/lib/pollOnce.ts and sw.js's notificationclick -- there's no room
- * to also thread term_year/term_code through a notification payload without
- * changing what's stored), so this deliberately doesn't require one. Index
- * numbers reset each term, so if the same index ever existed in an older
- * term too this takes the most recent -- the only case that actually
- * matters for a page whose whole point is "register right now".
+ * One section's full detail by index number -- what RegisterPage needs.
+ * Reached two ways: an in-app tap (SectionRow's "Open WebReg" button,
+ * which now threads its section's own term through the URL) and a push
+ * notification's direct link (backend/lib/pollOnce.ts and web/api/poll.ts
+ * now do the same). `term`, when given, is an exact filter.
+ *
+ * `term` is still optional -- and the fallback below still matters -- for
+ * a notification someone left unread from before this term-threading fix
+ * shipped, or any other link that genuinely doesn't have one. Without an
+ * exact term, Rutgers reusing index-number ranges each term becomes a real
+ * risk once more than one term is actually active at once (which the
+ * Search term picker now makes an everyday case, not just theoretical):
+ * this took "whichever term has this index number most recently," which
+ * could show a completely different class's professor/time/campus than
+ * the one actually being registered for. Exact term match removes that
+ * risk entirely for every path that has one to give.
  */
-export async function getSectionByIndex(indexNumber: string): Promise<SectionWithCourse | null> {
-  const { data, error } = await supabase
-    .from("sections")
-    .select("*, courses(*)")
-    .eq("index_number", indexNumber)
-    .order("term_year", { ascending: false })
-    .order("term_code", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+export async function getSectionByIndex(indexNumber: string, term?: Term): Promise<SectionWithCourse | null> {
+  let query = supabase.from("sections").select("*, courses(*)").eq("index_number", indexNumber);
+  query = term
+    ? query.eq("term_year", term.year).eq("term_code", term.code)
+    : query.order("term_year", { ascending: false }).order("term_code", { ascending: false });
+  const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw error;
   if (!data) return null;
 

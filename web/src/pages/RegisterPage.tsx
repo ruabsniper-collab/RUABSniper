@@ -6,6 +6,7 @@ import { getSectionByIndex } from "../lib/courses";
 import { meetingSummary } from "../components/SectionRow";
 import { RatingBadge } from "../components/RatingBadge";
 import type { SectionWithCourse } from "../types/db";
+import type { Term } from "../lib/term";
 
 const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
 
@@ -21,13 +22,20 @@ export function RegisterPage() {
   const [searchParams] = useSearchParams();
   const indexNumber = searchParams.get("index") ?? "";
   const label = searchParams.get("label") ?? "";
+  // Present on any link generated after the term-threading fix (both
+  // SectionRow's "Open WebReg" button and the push-notification URL, see
+  // getSectionByIndex's comment) -- absent only on a notification someone
+  // left unread from before that shipped, in which case getSectionByIndex
+  // falls back to its own "most recent term" guess.
+  const yearParam = searchParams.get("year");
+  const codeParam = searchParams.get("code");
   const [copied, setCopied] = useState(false);
   const [section, setSection] = useState<SectionWithCourse | null>(null);
   const [loading, setLoading] = useState(true);
 
   // This page is reached from a push notification tap as often as from an
   // in-app button (see sw.js's notificationclick + backend/lib/pollOnce.ts)
-  // -- a fresh top-level load with nothing but ?index=&label= in the URL,
+  // -- a fresh top-level load with nothing but the URL's own query params,
   // no in-memory section object to fall back on. Fetching by index is the
   // one path that works for both, so someone doesn't have to remember what
   // a bare index number means (professor, when, where) right when they're
@@ -39,7 +47,8 @@ export function RegisterPage() {
       return;
     }
     setLoading(true);
-    getSectionByIndex(indexNumber)
+    const term: Term | undefined = yearParam && codeParam ? { year: Number(yearParam), code: Number(codeParam) } : undefined;
+    getSectionByIndex(indexNumber, term)
       .then((s) => {
         if (!cancelled) setSection(s);
       })
@@ -53,7 +62,7 @@ export function RegisterPage() {
     return () => {
       cancelled = true;
     };
-  }, [indexNumber]);
+  }, [indexNumber, yearParam, codeParam]);
 
   async function copyIndex() {
     try {

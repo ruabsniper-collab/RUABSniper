@@ -194,7 +194,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendPushToDevice(w.device_id, {
           title: "A seat opened up!",
           body: label,
-          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}`,
+          // year/code let RegisterPage fetch this exact section instead of
+          // guessing "most recent term for this index" -- mirrors
+          // backend/lib/pollOnce.ts's copy of this same fix, see its
+          // comment. Keep both in sync if this logic ever changes.
+          url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}&year=${w.term_year}&code=${w.term_code}`,
         });
       }
     } else if (!isOpenNow && w.last_status) {

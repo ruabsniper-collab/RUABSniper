@@ -53,6 +53,25 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Whether there's anything to actually search on. Without this, opening
+  // Search cold ran searchCourses() with a blank query, which applies no
+  // filter at all beyond term -- fetching (and rendering) up to 200 courses'
+  // worth of sections nobody asked for, every single time, before anyone's
+  // typed or tapped anything. Real Supabase reads too, worth avoiding given
+  // this project's zero-cost design. A single filter of any kind (not just
+  // typed text -- "show me what's open at Busch" with an empty query box is
+  // a legitimate search) is enough to run a real query.
+  const hasAnyFilter =
+    query.trim() !== "" ||
+    minRating != null ||
+    requireRmpMatch ||
+    sortByRating ||
+    locations.size > 0 ||
+    filterDays.size > 0 ||
+    earliestStartText.trim() !== "" ||
+    latestEndText.trim() !== "" ||
+    hideConflicts;
+
   const refreshWatches = useCallback(async () => {
     const watches = await listWatches();
     const relevant = watches.filter((w) => w.term_year === term.year && w.term_code === term.code);
@@ -74,6 +93,12 @@ export function SearchPage() {
   }, [pathname, refreshWatches]);
 
   const runSearch = useCallback(async () => {
+    if (!hasAnyFilter) {
+      setResults([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -102,6 +127,7 @@ export function SearchPage() {
       setLoading(false);
     }
   }, [
+    hasAnyFilter,
     term,
     query,
     minRating,
@@ -193,7 +219,7 @@ export function SearchPage() {
       </select>
       <input
         className="input"
-        placeholder="Search by name, subject, course #, or core code (e.g. WCr)"
+        placeholder="Search by name, subject, course #, core code, or index #"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         spellCheck={false}
@@ -337,7 +363,13 @@ export function SearchPage() {
             onClick={() => navigate(`/course/${item.course_id}?year=${term.year}&code=${term.code}`)}
           />
         ))}
-        {!loading && results.length === 0 && (
+        {!loading && !hasAnyFilter && results.length === 0 && (
+          <EmptyState icon="search">
+            Type a course name, subject, core code, or index number above — or use a filter below — to
+            search {termLabel(term)}.
+          </EmptyState>
+        )}
+        {!loading && hasAnyFilter && results.length === 0 && (
           <EmptyState icon="search">No sections match yet — try a different search.</EmptyState>
         )}
       </div>
