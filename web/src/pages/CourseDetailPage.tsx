@@ -4,6 +4,7 @@ import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import { maybePromptAfterAddingWatch } from "../lib/push";
 import { SectionRow } from "../components/SectionRow";
+import { EmptyState } from "../components/EmptyState";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import type { SectionWithCourse } from "../types/db";
@@ -71,11 +72,17 @@ export function CourseDetailPage() {
     await refresh();
   }
 
-  if (loading) return <p className="hint">Loading…</p>;
-  if (error) return <p className="error-text">{error}</p>;
-
   return (
     <div>
+      {error && <p className="error-text">{error}</p>}
+
+      {loading && sections.length === 0 && (
+        <div>
+          <div className="skeleton-row" />
+          <div className="skeleton-row" />
+        </div>
+      )}
+
       {sections[0] && (
         <div style={{ marginBottom: 10 }}>
           <h2>
@@ -95,6 +102,10 @@ export function CourseDetailPage() {
           onToggleWatch={() => toggleWatch(item)}
         />
       ))}
+
+      {!loading && !error && sections.length === 0 && (
+        <EmptyState icon="search">No sections found for this course.</EmptyState>
+      )}
     </div>
   );
 }
