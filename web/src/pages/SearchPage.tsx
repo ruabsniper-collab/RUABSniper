@@ -261,30 +261,10 @@ export function SearchPage() {
         </div>
       </div>
 
-      <div className="filter-row">
-        <span className="filter-label">Credits</span>
-        <div className="chip-row">
-          <button
-            className={`chip ${creditsFilter == null ? "active" : ""}`}
-            onClick={() => setCreditsFilter(null)}
-          >
-            Any
-          </button>
-          {/* Exact match, not "at least" -- someone filtering by credits
-              usually needs a specific number to fill a specific gap in
-              their schedule, not a minimum. Values verified against the
-              real catalog, see CREDITS_OPTIONS in lib/courses.ts. */}
-          {CREDITS_OPTIONS.map((c) => (
-            <button
-              key={c}
-              className={`chip ${creditsFilter === c ? "active" : ""}`}
-              onClick={() => setCreditsFilter(c)}
-            >
-              {creditsLabel(c)}
-            </button>
-          ))}
-        </div>
-      </div>
+      <label className="switch-row">
+        <span className="filter-label">Sort by highest-rated professor first</span>
+        <input type="checkbox" checked={sortByRating} onChange={(e) => setSortByRating(e.target.checked)} />
+      </label>
 
       {minRating != null && (
         <label className="switch-row">
@@ -337,7 +317,7 @@ export function SearchPage() {
       )}
 
       <button className="more-filters-toggle" onClick={() => setShowMoreFilters((v) => !v)}>
-        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (sort, location, days/times, online/async)"}
+        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (credits, location, days/times, online/async)"}
       </button>
 
       {showMoreFilters && (
@@ -351,10 +331,30 @@ export function SearchPage() {
             />
           </label>
 
-          <label className="switch-row">
-            <span className="filter-label">Sort by highest-rated professor first</span>
-            <input type="checkbox" checked={sortByRating} onChange={(e) => setSortByRating(e.target.checked)} />
-          </label>
+          <div className="filter-row">
+            <span className="filter-label">Credits</span>
+            <div className="chip-row">
+              <button
+                className={`chip ${creditsFilter == null ? "active" : ""}`}
+                onClick={() => setCreditsFilter(null)}
+              >
+                Any
+              </button>
+              {/* Exact match, not "at least" -- someone filtering by credits
+                  usually needs a specific number to fill a specific gap in
+                  their schedule, not a minimum. Values verified against the
+                  real catalog, see CREDITS_OPTIONS in lib/courses.ts. */}
+              {CREDITS_OPTIONS.map((c) => (
+                <button
+                  key={c}
+                  className={`chip ${creditsFilter === c ? "active" : ""}`}
+                  onClick={() => setCreditsFilter(c)}
+                >
+                  {creditsLabel(c)}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="filter-row">
             <span className="filter-label">Campus / online</span>
