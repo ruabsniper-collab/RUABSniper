@@ -184,6 +184,24 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
     sections = courses.flatMap((c) => (c.sections ?? []).map((s) => ({ ...s, courses: c })));
   }
 
+  if (filters.locations && filters.locations.length > 0) {
+    sections = sections.filter((s) => matchesLocation(s, filters.locations!));
+  }
+
+  if ((filters.days && filters.days.length > 0) || filters.earliestStart || filters.latestEnd) {
+    const daySet = new Set(filters.days ?? []);
+    sections = sections.filter((s) =>
+      matchesDayAndTime(s, daySet, filters.earliestStart ?? null, filters.latestEnd ?? null),
+    );
+  }
+
+  if (filters.hideScheduleConflicts && filters.mySchedule?.length) {
+    sections = sections.filter((s) => {
+      const sectionCourseKey = `${s.courses.subject_code}:${s.courses.course_number}`;
+      return !checkConflict(s.meeting_times, filters.mySchedule!, sectionCourseKey, filters.travelBufferMinutes ?? 0);
+    });
+  }
+
   // Attach RMP ratings.
   const instructorNames = new Set<string>();
   for (const s of sections) for (const i of s.instructors) instructorNames.add(normalizeInstructorName(i));
@@ -219,24 +237,6 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
     sections = sections.filter((s) => {
       if (!hasConfidentMatch(s)) return Boolean(filters.includeUnratedWhenFiltering);
       return (s.professorRating!.avg_rating ?? 0) >= filters.minRating!;
-    });
-  }
-
-  if (filters.locations && filters.locations.length > 0) {
-    sections = sections.filter((s) => matchesLocation(s, filters.locations!));
-  }
-
-  if ((filters.days && filters.days.length > 0) || filters.earliestStart || filters.latestEnd) {
-    const daySet = new Set(filters.days ?? []);
-    sections = sections.filter((s) =>
-      matchesDayAndTime(s, daySet, filters.earliestStart ?? null, filters.latestEnd ?? null),
-    );
-  }
-
-  if (filters.hideScheduleConflicts && filters.mySchedule?.length) {
-    sections = sections.filter((s) => {
-      const sectionCourseKey = `${s.courses.subject_code}:${s.courses.course_number}`;
-      return !checkConflict(s.meeting_times, filters.mySchedule!, sectionCourseKey, filters.travelBufferMinutes ?? 0);
     });
   }
 
