@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { browseOpenSections, searchCourses, CREDITS_OPTIONS, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
@@ -115,7 +115,9 @@ export function SearchPage() {
     haptic("tap");
   }
 
+  const searchRequest = useRef(0);
   const runSearch = useCallback(async () => {
+    const request = ++searchRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -140,11 +142,13 @@ export function SearchPage() {
             earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
             latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
           });
-      setResults(data);
+      if (request === searchRequest.current) setResults(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Search failed");
+      if (request === searchRequest.current) {
+        setError(e instanceof Error ? e.message : "Search failed");
+      }
     } finally {
-      setLoading(false);
+      if (request === searchRequest.current) setLoading(false);
     }
   }, [
     hasAnyFilter,
@@ -165,9 +169,12 @@ export function SearchPage() {
   ]);
 
   useEffect(() => {
-    const handle = setTimeout(runSearch, 350); // debounce
-    return () => clearTimeout(handle);
-  }, [runSearch]);
+    const handle = setTimeout(runSearch, query.trim() ? 200 : 0);
+    return () => {
+      clearTimeout(handle);
+      searchRequest.current++;
+    };
+  }, [query, runSearch]);
 
   const { pull, refreshing, threshold } = usePullToRefresh(
     () => Promise.all([runSearch(), refreshWatches()]).then(() => {}),

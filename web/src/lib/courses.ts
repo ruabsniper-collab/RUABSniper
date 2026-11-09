@@ -6,6 +6,7 @@ import { militaryToMinutes } from "./time";
 import { listWatches } from "./watches";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
+const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at";
 
 // Real values SOC uses for meeting_times[].campus on the NB campus (verified
 // against a live courses.json pull): "BUSCH", "COLLEGE AVENUE",
@@ -140,7 +141,7 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
     // that exact section, not a fuzzy list.
     const { data: sectionRows, error: sectionsErr } = await supabase
       .from("sections")
-      .select("*, courses(*)")
+      .select(`*, courses(${COURSE_COLUMNS})`)
       .eq("term_year", term.year)
       .eq("term_code", term.code)
       .eq("index_number", q);
@@ -152,7 +153,7 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
   } else {
     let courseQuery = supabase
       .from("courses")
-      .select("*, sections(*)")
+      .select(`${COURSE_COLUMNS}, sections(*)`)
       .eq("term_year", term.year)
       .eq("term_code", term.code);
 
@@ -267,7 +268,7 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
 export async function browseOpenSections(term: Term, limit = 24): Promise<SectionWithCourse[]> {
   const { data: sectionRows, error } = await supabase
     .from("sections")
-    .select("*, courses(*)")
+    .select(`*, courses(${COURSE_COLUMNS})`)
     .eq("term_year", term.year)
     .eq("term_code", term.code)
     .eq("open", true)
@@ -360,7 +361,7 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
  * risk entirely for every path that has one to give.
  */
 export async function getSectionByIndex(indexNumber: string, term?: Term): Promise<SectionWithCourse | null> {
-  let query = supabase.from("sections").select("*, courses(*)").eq("index_number", indexNumber);
+  let query = supabase.from("sections").select(`*, courses(${COURSE_COLUMNS})`).eq("index_number", indexNumber);
   query = term
     ? query.eq("term_year", term.year).eq("term_code", term.code)
     : query.order("term_year", { ascending: false }).order("term_code", { ascending: false });
@@ -417,7 +418,7 @@ export async function getWatchedSections(): Promise<WatchedSection[]> {
   for (const group of byTerm.values()) {
     const { data, error } = await supabase
       .from("sections")
-      .select("*, courses(*)")
+      .select(`*, courses(${COURSE_COLUMNS})`)
       .eq("term_year", group[0].term_year)
       .eq("term_code", group[0].term_code)
       .in(
