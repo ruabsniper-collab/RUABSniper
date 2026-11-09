@@ -232,21 +232,28 @@ export function SearchPage() {
   return (
     <div>
       <PullToRefreshIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+      <header className="search-heading">
+        <div>
+          <p className="search-eyebrow">Rutgers · New Brunswick</p>
+          <h1>RUAB Sniper</h1>
+        </div>
+        <select
+          className="input search-term"
+          aria-label="Semester"
+          value={termKey(term)}
+          onChange={(e) => handleTermChange(e.target.value)}
+        >
+          {TERM_OPTIONS.map((t) => (
+            <option key={termKey(t)} value={termKey(t)}>
+              {termLabel(t)}
+            </option>
+          ))}
+        </select>
+      </header>
       <NotificationPrompt />
-      <select
-        className="input"
-        style={{ width: "auto", marginBottom: 10 }}
-        value={termKey(term)}
-        onChange={(e) => handleTermChange(e.target.value)}
-      >
-        {TERM_OPTIONS.map((t) => (
-          <option key={termKey(t)} value={termKey(t)}>
-            {termLabel(t)}
-          </option>
-        ))}
-      </select>
       <input
-        className="input"
+        className="input search-input"
+        aria-label="Search courses"
         placeholder="Search by name, subject, course #, core code, or index #"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

@@ -19,6 +19,10 @@
   --text: #24292f;
   --bg: #f6f8fa;
   --card-bg: #fff;
+  --glass-fill: rgba(255, 255, 255, 0.78);
+  --glass-rim: rgba(255, 255, 255, 0.92);
+  --glow-scarlet: rgba(229, 42, 88, 0.14);
+  --glow-violet: rgba(99, 106, 213, 0.13);
   --green-bg: #dafbe1;
   --green: #1a7f37;
   --red-bg: #ffebe9;
@@ -43,6 +47,10 @@
     --text: #e6edf3;
     --bg: #0d1117;
     --card-bg: #161b22;
+    --glass-fill: rgba(22, 27, 34, 0.84);
+    --glass-rim: rgba(255, 255, 255, 0.12);
+    --glow-scarlet: rgba(228, 43, 92, 0.19);
+    --glow-violet: rgba(112, 102, 220, 0.18);
     --green-bg: #12261c;
     --green: #3fb950;
     --red-bg: #3d1420;
@@ -62,6 +70,10 @@
   --text: #e6edf3;
   --bg: #0d1117;
   --card-bg: #161b22;
+  --glass-fill: rgba(22, 27, 34, 0.84);
+  --glass-rim: rgba(255, 255, 255, 0.12);
+  --glow-scarlet: rgba(228, 43, 92, 0.19);
+  --glow-violet: rgba(112, 102, 220, 0.18);
   --green-bg: #12261c;
   --green: #3fb950;
   --red-bg: #3d1420;
@@ -151,7 +163,10 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(ellipse at 16% 0%, var(--glow-scarlet), transparent 50%),
+    radial-gradient(ellipse at 92% 30%, var(--glow-violet), transparent 48%),
+    var(--bg);
   color: var(--text);
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -165,8 +180,10 @@ body {
 .app-main {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
-  padding-bottom: 92px; /* clears the fixed bottom nav (taller now that tabs have icons) */
+  padding: max(18px, env(safe-area-inset-top)) 14px 0;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
@@ -174,17 +191,36 @@ body {
 
 .bottom-nav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+  width: auto;
+  max-width: 560px;
+  margin-inline: auto;
+  z-index: 10;
   display: flex;
   background: var(--card-bg);
-  border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 4px;
+  box-shadow: inset 0 1px 0 var(--glass-rim), 0 8px 28px rgba(20, 16, 31, 0.16);
+}
+
+/* Blur the floating dock only. The scrolling course cards use tinted fills. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  @media (prefers-reduced-transparency: no-preference) {
+    .bottom-nav {
+      background: var(--glass-fill);
+      -webkit-backdrop-filter: blur(20px) saturate(1.45);
+      backdrop-filter: blur(20px) saturate(1.45);
+    }
+  }
 }
 
 .bottom-nav a {
   flex: 1;
+  min-width: 0;
+  border-radius: 19px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -199,6 +235,7 @@ body {
 
 .bottom-nav a.active {
   color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .nav-icon {
@@ -269,16 +306,6 @@ body {
   height: 21px;
 }
 
-.bottom-nav a.active .nav-icon {
-  background: var(--accent-bg);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .nav-icon {
-    transition: background-color 0.15s ease;
-  }
-}
-
 h1,
 h2,
 h3 {
@@ -294,11 +321,57 @@ h3 {
 .input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 10px 12px;
   background: var(--card-bg);
   color: var(--text);
   font-size: 14px;
+}
+
+.search-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.search-heading h1 {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 38px);
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.search-eyebrow {
+  margin: 0 0 5px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.search-term {
+  width: auto;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.search-input {
+  min-height: 48px;
+  padding-inline: 16px;
+  font-size: 16px;
+  box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-card);
+}
+
+.input:focus-visible,
+.section-row:focus-visible,
+.bottom-nav a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .filter-row {
@@ -367,10 +440,10 @@ h3 {
 }
 
 .card {
-  background: var(--card-bg);
+  background: var(--glass-fill);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-card);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-card);
   padding: 12px;
   margin-bottom: 10px;
 }
@@ -386,12 +459,19 @@ h3 {
   flex-direction: column;
   gap: 4px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-card);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-card);
   padding: 12px;
   margin-bottom: 10px;
-  background: var(--card-bg);
+  background: var(--glass-fill);
   cursor: pointer;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .card,
+  .section-row {
+    background: var(--card-bg);
+  }
 }
 
 /* Left-edge accent stripe on an open section -- readable peripherally
@@ -496,7 +576,7 @@ h3 {
 .btn {
   font-family: var(--font-display);
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 10px 14px;
   font-weight: 600;
   font-size: 13px;
