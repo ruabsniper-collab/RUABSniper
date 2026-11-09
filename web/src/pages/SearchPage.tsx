@@ -27,6 +27,7 @@ function sectionLabel(section: SectionWithCourse): string {
 
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
 const TERM_OPTIONS = termOptions();
+const SECTION_BATCH_SIZE = 40;
 
 export function SearchPage() {
   const navigate = useNavigate();
@@ -57,9 +58,10 @@ export function SearchPage() {
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
   const [scheduleName, setScheduleName] = useState("");
   const [results, setResults] = useState<SectionWithCourse[]>([]);
+  const [visibleCount, setVisibleCount] = useState(SECTION_BATCH_SIZE);
   const [watchedIndexes, setWatchedIndexes] = useState<Set<string>>(new Set());
   const [watchIdByIndex, setWatchIdByIndex] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Whether there's a real, targeted search to run vs. just showing the
@@ -115,14 +117,16 @@ export function SearchPage() {
     haptic("tap");
   }
 
-  const searchRequest = useRef(0);
+  const searchRequest = useRef<AbortController | null>(null);
   const runSearch = useCallback(async () => {
-    const request = ++searchRequest.current;
+    searchRequest.current?.abort();
+    const request = new AbortController();
+    searchRequest.current = request;
     setLoading(true);
     setError(null);
     try {
       const data = !hasAnyFilter
-        ? await browseOpenSections(term)
+        ? await browseOpenSections(term, request.signal)
         : await searchCourses({
             term,
             query,
@@ -141,14 +145,14 @@ export function SearchPage() {
             // leniency as any other free-text filter input.
             earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
             latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
-          });
-      if (request === searchRequest.current) setResults(data);
+          }, request.signal);
+      if (!request.signal.aborted) setResults(data);
     } catch (e) {
-      if (request === searchRequest.current) {
+      if (!request.signal.aborted) {
         setError(e instanceof Error ? e.message : "Search failed");
       }
     } finally {
-      if (request === searchRequest.current) setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
   }, [
     hasAnyFilter,
@@ -169,10 +173,11 @@ export function SearchPage() {
   ]);
 
   useEffect(() => {
+    setVisibleCount(SECTION_BATCH_SIZE);
     const handle = setTimeout(runSearch, query.trim() ? 200 : 0);
     return () => {
       clearTimeout(handle);
-      searchRequest.current++;
+      searchRequest.current?.abort();
     };
   }, [query, runSearch]);
 
@@ -184,6 +189,8 @@ export function SearchPage() {
   function handleTermChange(key: string) {
     const next = TERM_OPTIONS.find((t) => termKey(t) === key);
     if (!next) return;
+    setResults([]);
+    setLoading(true);
     setTerm(next);
     saveTermPreference(next);
   }
@@ -251,14 +258,21 @@ export function SearchPage() {
         </select>
       </header>
       <NotificationPrompt />
-      <input
-        className="input search-input"
-        aria-label="Search courses"
-        placeholder="Search by name, subject, course #, core code, or index #"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        spellCheck={false}
-      />
+      <div className="search-field">
+        <input
+          className="input search-input"
+          aria-label="Search courses"
+          placeholder="Search by name, subject, course #, core code, or index #"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          spellCheck={false}
+        />
+        {query && (
+          <button className="search-clear" aria-label="Clear search" onClick={() => setQuery("")}>
+            ×
+          </button>
+        )}
+      </div>
 
       <div className="filter-row">
         <span className="filter-label">Min RMP rating</span>
@@ -427,17 +441,21 @@ export function SearchPage() {
           <div className="skeleton-row" />
         </div>
       ) : (
-        loading && <p className="hint" style={{ marginTop: 12 }}>Searching…</p>
+        loading && <p className="hint" role="status">Searching…</p>
       )}
       {error && <p className="error-text">{error}</p>}
 
-      <div style={{ marginTop: 8 }}>
-        {!loading && !hasAnyFilter && results.length > 0 && (
-          <p className="hint" style={{ marginBottom: 8 }}>
-            Some open sections for {termLabel(term)} — search above to narrow it down.
-          </p>
+      <section className="search-results" aria-label="Course results" aria-busy={loading}>
+        {results.length > 0 && (
+          <div className="search-results-header">
+            <h2>{hasAnyFilter ? "Search results" : "Open sections"}</h2>
+            <span className="pill search-result-count">
+              {results.length > visibleCount ? `${visibleCount} of ` : ""}
+              {results.length} {results.length === 1 ? "section" : "sections"}
+            </span>
+          </div>
         )}
-        {results.map((item) => (
+        {results.slice(0, visibleCount).map((item) => (
           <SectionRow
             key={item.id}
             section={item}
@@ -446,16 +464,21 @@ export function SearchPage() {
             onClick={() => navigate(`/course/${item.course_id}?year=${term.year}&code=${term.code}`)}
           />
         ))}
-        {!loading && !hasAnyFilter && results.length === 0 && (
+        {!loading && results.length > visibleCount && (
+          <button className="btn btn-secondary search-more" onClick={() => setVisibleCount((count) => count + SECTION_BATCH_SIZE)}>
+            Show {Math.min(SECTION_BATCH_SIZE, results.length - visibleCount)} more sections
+          </button>
+        )}
+        {!loading && !error && !hasAnyFilter && results.length === 0 && (
           <EmptyState icon="search">
             No open sections to show yet for {termLabel(term)}. Type a course name, subject, core code, or
             index number above — or use a filter below.
           </EmptyState>
         )}
-        {!loading && hasAnyFilter && results.length === 0 && (
+        {!loading && !error && hasAnyFilter && results.length === 0 && (
           <EmptyState icon="search">No sections match yet — try a different search.</EmptyState>
         )}
-      </div>
+      </section>
     </div>
   );
 }

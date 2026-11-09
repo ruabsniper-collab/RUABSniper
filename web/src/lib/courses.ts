@@ -125,7 +125,7 @@ function ratingsForInstructors(
   return instructors.map((raw) => ratingsByName.get(normalizeInstructorName(raw)) ?? null);
 }
 
-export async function searchCourses(filters: SearchFilters): Promise<SectionWithCourse[]> {
+export async function searchCourses(filters: SearchFilters, signal: AbortSignal): Promise<SectionWithCourse[]> {
   const { term, query } = filters;
   const q = query?.trim();
 
@@ -144,7 +144,8 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
       .select(`*, courses(${COURSE_COLUMNS})`)
       .eq("term_year", term.year)
       .eq("term_code", term.code)
-      .eq("index_number", q);
+      .eq("index_number", q)
+      .abortSignal(signal);
     if (sectionsErr) throw sectionsErr;
     sections = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
       ...row,
@@ -177,7 +178,7 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
       }
     }
 
-    const { data, error } = await courseQuery.limit(200);
+    const { data, error } = await courseQuery.limit(200).abortSignal(signal);
     if (error) throw error;
 
     const courses = (data ?? []) as (Course & { sections: Section[] })[];
@@ -210,7 +211,8 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
     const { data: ratings, error: ratingsErr } = await supabase
       .from("professor_rmp_matches")
       .select("*")
-      .in("instructor_name", [...instructorNames]);
+      .in("instructor_name", [...instructorNames])
+      .abortSignal(signal);
     if (ratingsErr) throw ratingsErr;
 
     const ratingsByName = new Map<string, ProfessorRmpMatch>(
@@ -265,14 +267,15 @@ export async function searchCourses(filters: SearchFilters): Promise<SectionWith
  * thing actually actionable in a sniping app, and capped low enough
  * (`limit`) that this stays cheap regardless of how big the catalog gets.
  */
-export async function browseOpenSections(term: Term, limit = 24): Promise<SectionWithCourse[]> {
+export async function browseOpenSections(term: Term, signal: AbortSignal): Promise<SectionWithCourse[]> {
   const { data: sectionRows, error } = await supabase
     .from("sections")
     .select(`*, courses(${COURSE_COLUMNS})`)
     .eq("term_year", term.year)
     .eq("term_code", term.code)
     .eq("open", true)
-    .limit(limit);
+    .limit(24)
+    .abortSignal(signal);
   if (error) throw error;
 
   let sections: SectionWithCourse[] = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
@@ -287,7 +290,8 @@ export async function browseOpenSections(term: Term, limit = 24): Promise<Sectio
     const { data: ratings, error: ratingsErr } = await supabase
       .from("professor_rmp_matches")
       .select("*")
-      .in("instructor_name", [...instructorNames]);
+      .in("instructor_name", [...instructorNames])
+      .abortSignal(signal);
     if (ratingsErr) throw ratingsErr;
     const ratingsByName = new Map<string, ProfessorRmpMatch>(
       (ratings ?? []).map((r) => [r.instructor_name as string, r as ProfessorRmpMatch]),

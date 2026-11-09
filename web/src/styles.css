@@ -366,6 +366,54 @@ h3 {
   box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-card);
 }
 
+.search-field {
+  position: relative;
+}
+
+.search-field:has(.search-clear) .search-input {
+  padding-inline-end: 54px;
+}
+
+.search-clear {
+  position: absolute;
+  inset-block: 4px;
+  inset-inline-end: 4px;
+  width: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.search-results {
+  margin-top: 16px;
+}
+
+.search-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.search-results-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.search-result-count {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.search-more {
+  width: 100%;
+  min-height: 44px;
+}
+
 .input:focus-visible,
 .section-row:focus-visible,
 .bottom-nav a:focus-visible,
@@ -804,7 +852,7 @@ button:focus-visible {
    and Watches, shaped roughly like the .section-row they'll become. */
 .skeleton-row {
   height: 96px;
-  border-radius: 10px;
+  border-radius: 18px;
   margin-bottom: 10px;
   background: linear-gradient(90deg, var(--card-bg) 25%, var(--border) 37%, var(--card-bg) 63%);
   background-size: 400% 100%;
