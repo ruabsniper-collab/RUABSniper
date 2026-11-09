@@ -22,21 +22,13 @@ export function termKey(term: Term): string {
 }
 
 /**
- * Single best-guess default for Search's term picker. Previously this only
- * ever returned Spring for the literal month of January and Fall for
- * everything else including Feb-Aug -- meaning it showed Fall courses
- * while Spring semester was actually in session. Now it tracks which
- * semester is actually running:
- *   - Jan-May: Spring is in session (Jan add/drop through early May finals)
- *   - Jun-Jul: summer sessions
- *   - Aug-Dec: Fall is starting or running
- * Search's own term picker (see termOptions()) is what actually matters for
- * the Nov-Dec Spring-registration rush this app cares about most -- this
- * default just needs to be the *usual* right answer, not the only answer.
+ * Default for Search when no term preference is saved. Switch to next
+ * year's Spring in November, when Spring registration typically begins.
  */
 export function guessCurrentTerm(now = new Date()): Term {
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
+  if (month >= 11) return { year: year + 1, code: TERM_CODES.SPRING };
   if (month >= 1 && month <= 5) return { year, code: TERM_CODES.SPRING };
   if (month >= 6 && month <= 7) return { year, code: TERM_CODES.SUMMER };
   return { year, code: TERM_CODES.FALL };
