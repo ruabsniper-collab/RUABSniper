@@ -505,11 +505,11 @@ button:focus-visible {
 .section-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: inset 0 1px 0 var(--glass-rim), var(--shadow-card);
-  padding: 12px;
+  padding: 14px;
   margin-bottom: 10px;
   background: var(--glass-fill);
   cursor: pointer;
@@ -527,7 +527,7 @@ button:focus-visible {
    row's own left padding to keep everything else's alignment unchanged. */
 .section-row-open {
   border-left: 3px solid var(--green);
-  padding-left: 10px;
+  padding-left: 12px;
 }
 
 .section-row-header {
@@ -542,13 +542,58 @@ button:focus-visible {
   font-size: 15px;
 }
 
-/* The course title -- one step up from the plain .meta lines below it
-   (index, instructor, meeting time): it's the one line that says what
-   this actually is, everything after is filtering detail. */
-.meta-primary {
-  font-size: 13px;
-  color: var(--text);
+.section-row .section-row-header {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.section-row .section-title {
+  margin: 3px 0 0;
+  font-size: 17px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.section-code {
   margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 2px;
+}
+
+.section-facts span {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding-block: 4px;
+}
+
+.section-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .meta-icon {
@@ -588,14 +633,23 @@ button:focus-visible {
 
 .section-footer {
   display: flex;
-  /* Used to split a rating badge (left) and the watch button (right) --
-     now holds only the watch button, since ratings moved to a per-
-     instructor row above (see SectionRow.tsx). flex-end keeps it on the
-     right where it's always been rather than sliding to the left with
-     only one child in a space-between row. */
+  flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: center;
+  align-items: stretch;
+  gap: 8px;
   margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.section-footer .watch-btn,
+.section-footer .section-register {
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.section-register {
+  flex: 1 1 180px;
 }
 
 .badge {
