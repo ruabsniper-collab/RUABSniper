@@ -51,6 +51,7 @@ export function SectionRow({
   justOpened?: boolean;
 }) {
   const navigate = useNavigate();
+  const credits = creditsLabel(section.courses.credits);
 
   async function openWebReg(e: React.MouseEvent) {
     e.stopPropagation();
@@ -85,21 +86,20 @@ export function SectionRow({
       role={onClick ? "button" : undefined}
     >
       <div className="section-row-header">
-        <span className="section-title">
-          {section.courses.subject_code}:{section.courses.course_number} · sec {section.section_number}
-        </span>
-        <span className={`pill ${section.open ? "pill-open" : "pill-closed"}`}>
+        <div>
+          <p className="section-code">
+            {section.courses.subject_code}:{section.courses.course_number} · Section {section.section_number}
+          </p>
+          <p className="section-title">{section.courses.title}</p>
+        </div>
+        <span className={`pill section-status ${section.open ? "pill-open" : "pill-closed"}`}>
           {section.open ? "OPEN" : "CLOSED"}
         </span>
       </div>
-      {/* Course title reads at a step up from the metadata below it (index,
-          instructor, time) -- it's the one line that actually says what
-          this is, the rest is filtering detail once you already know that. */}
-      <p className="meta-primary">
-        {section.courses.title}
-        {creditsLabel(section.courses.credits) && ` · ${creditsLabel(section.courses.credits)}`}
-      </p>
-      <p className="meta">Index {section.index_number}</p>
+      <div className="section-facts">
+        <span>Index {section.index_number}</span>
+        {credits && <span>{credits}</span>}
+      </div>
       {section.instructors.length === 0 ? (
         <div className="card-row" style={{ gap: 6, marginTop: 2 }}>
           <span className="meta-icon">
@@ -134,28 +134,25 @@ export function SectionRow({
           {meetingSummary(section)}
         </p>
       </div>
-      <div className="section-footer">
-        {onToggleWatch && (
-          <button
-            className={`watch-btn ${isWatched ? "active" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleWatch();
-            }}
-          >
-            {isWatched ? "Sniped" : "Notify me"}
-          </button>
-        )}
-      </div>
-      {/* Only when actually open — a WebReg shortcut for a closed section
-          isn't useful, there's nothing to register for yet. Right on the
-          row (Search, Course Detail, Snipes all render this component) so
-          it's one tap the moment it matters, not a click-into-the-course
-          away. */}
-      {section.open && (
-        <button className="btn" style={{ marginTop: 4 }} onClick={openWebReg}>
-          Open WebReg with index copied →
-        </button>
+      {(onToggleWatch || section.open) && (
+        <div className="section-footer">
+          {onToggleWatch && (
+            <button
+              className={`watch-btn ${isWatched ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleWatch();
+              }}
+            >
+              {isWatched ? "Sniped" : "Notify me"}
+            </button>
+          )}
+          {section.open && (
+            <button className="btn section-register" onClick={openWebReg}>
+              Copy index & open WebReg →
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
