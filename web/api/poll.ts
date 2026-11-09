@@ -111,6 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await webpush.sendNotification(
         { endpoint: data.endpoint, keys: { p256dh: data.p256dh, auth: data.auth } },
         JSON.stringify(payload),
+        { urgency: "high" },
       );
     } catch (err) {
       const statusCode = (err as { statusCode?: number }).statusCode;

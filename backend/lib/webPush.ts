@@ -54,7 +54,7 @@ export async function sendPushToDevice(deviceId: string, payload: PushPayload): 
   };
 
   try {
-    await webpush.sendNotification(subscription, JSON.stringify(payload));
+    await webpush.sendNotification(subscription, JSON.stringify(payload), { urgency: "high" });
     console.log(`[webPush] sent to device ${deviceId}: "${payload.title}"`);
   } catch (err) {
     const statusCode = (err as { statusCode?: number }).statusCode;
