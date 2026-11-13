@@ -625,6 +625,11 @@ button:focus-visible {
   color: var(--red);
 }
 
+.pill-unknown {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
 .meta {
   font-size: 12px;
   color: var(--muted);

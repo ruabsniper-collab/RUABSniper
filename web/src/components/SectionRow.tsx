@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useVerifiedOpen } from "../lib/useVerifiedOpen";
 import type { SectionWithCourse } from "../types/db";
 import { RatingBadge } from "./RatingBadge";
 import { ClockIcon, PersonIcon } from "./icons";
@@ -51,6 +52,7 @@ export function SectionRow({
   justOpened?: boolean;
 }) {
   const navigate = useNavigate();
+  const open = useVerifiedOpen(section);
   const credits = creditsLabel(section.courses.credits);
 
   async function openWebReg(e: React.MouseEvent) {
@@ -81,7 +83,7 @@ export function SectionRow({
 
   return (
     <div
-      className={`section-row ${section.open ? "section-row-open" : ""} ${justOpened ? "just-opened" : ""}`}
+      className={`section-row ${open ? "section-row-open" : ""} ${justOpened ? "just-opened" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
     >
@@ -92,14 +94,19 @@ export function SectionRow({
           </p>
           <p className="section-title">{section.courses.title}</p>
         </div>
-        <span className={`pill section-status ${section.open ? "pill-open" : "pill-closed"}`}>
-          {section.open ? "OPEN" : "CLOSED"}
+        <span className={`pill section-status ${open === null ? "pill-unknown" : open ? "pill-open" : "pill-closed"}`}>
+          {open === null ? "UNVERIFIED" : open ? "OPEN" : "CLOSED"}
         </span>
       </div>
       <div className="section-facts">
         <span>Index {section.index_number}</span>
         {credits && <span>{credits}</span>}
       </div>
+      <p className="meta">
+        {open !== null && section.availabilityCheckedAt
+          ? `Seats checked ${new Date(section.availabilityCheckedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`
+          : "Seat availability could not be verified"}
+      </p>
       {section.instructors.length === 0 ? (
         <div className="card-row" style={{ gap: 6, marginTop: 2 }}>
           <span className="meta-icon">
@@ -134,7 +141,7 @@ export function SectionRow({
           {meetingSummary(section)}
         </p>
       </div>
-      {(onToggleWatch || section.open) && (
+      {(onToggleWatch || open) && (
         <div className="section-footer">
           {onToggleWatch && (
             <button
@@ -147,7 +154,7 @@ export function SectionRow({
               {isWatched ? "Sniped" : "Notify me"}
             </button>
           )}
-          {section.open && (
+          {open && (
             <button className="btn section-register" onClick={openWebReg}>
               Copy index & open WebReg →
             </button>

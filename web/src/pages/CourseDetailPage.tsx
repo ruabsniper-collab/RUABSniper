@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSeatRefresh } from "../lib/useSeatRefresh";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getCourseSections } from "../lib/courses";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
@@ -48,6 +49,7 @@ export function CourseDetailPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useSeatRefresh(refresh);
 
   async function toggleWatch(section: SectionWithCourse) {
     const existingId = watchIdByIndex.get(section.index_number);

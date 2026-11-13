@@ -33,7 +33,8 @@ export type Section = {
   index_number: string;
   section_number: string;
   instructors: string[];
-  open: boolean;
+  open: boolean | null;
+  availabilityCheckedAt?: string | null;
   meeting_times: MeetingTime[];
   comments: string | null;
   updated_at: string;

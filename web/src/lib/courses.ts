@@ -4,6 +4,7 @@ import type { Term } from "./term";
 import { checkConflict, type ScheduleBlock } from "./schedule";
 import { militaryToMinutes } from "./time";
 import { listWatches } from "./watches";
+import { getAvailability, verifyAvailability } from "./availability";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
 const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at";
@@ -252,7 +253,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
     });
   }
 
-  return sections;
+  return verifyAvailability(sections, signal);
 }
 
 /**
@@ -268,12 +269,15 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
  * (`limit`) that this stays cheap regardless of how big the catalog gets.
  */
 export async function browseOpenSections(term: Term, signal: AbortSignal): Promise<SectionWithCourse[]> {
+  const live = await getAvailability(term, signal);
+  const candidates = [...live.openIndexes].slice(0, 200);
+  if (candidates.length === 0) return [];
   const { data: sectionRows, error } = await supabase
     .from("sections")
     .select(`*, courses(${COURSE_COLUMNS})`)
     .eq("term_year", term.year)
     .eq("term_code", term.code)
-    .eq("open", true)
+    .in("index_number", candidates)
     .limit(24)
     .abortSignal(signal);
   if (error) throw error;
@@ -281,6 +285,8 @@ export async function browseOpenSections(term: Term, signal: AbortSignal): Promi
   let sections: SectionWithCourse[] = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
     ...row,
     courses: row.courses,
+    open: true,
+    availabilityCheckedAt: live.checkedAt,
   }));
 
   const instructorNames = new Set<string>();
@@ -310,7 +316,7 @@ export async function browseOpenSections(term: Term, signal: AbortSignal): Promi
 export async function getCourseSections(courseId: string): Promise<SectionWithCourse[]> {
   const { data: course, error: courseErr } = await supabase
     .from("courses")
-    .select("*")
+    .select(COURSE_COLUMNS)
     .eq("id", courseId)
     .single();
   if (courseErr) throw courseErr;
@@ -343,7 +349,7 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
     }));
   }
 
-  return sections;
+  return verifyAvailability(sections);
 }
 
 /**
@@ -392,7 +398,7 @@ export async function getSectionByIndex(indexNumber: string, term?: Term): Promi
     };
   }
 
-  return section;
+  return (await verifyAvailability([section]))[0];
 }
 
 export type WatchedSection = { watch: Watch; section: SectionWithCourse | null };
@@ -454,6 +460,7 @@ export async function getWatchedSections(): Promise<WatchedSection[]> {
     }));
   }
 
+  sections = await verifyAvailability(sections);
   const sectionByKey = new Map(sections.map((s) => [`${s.term_year}:${s.term_code}:${s.index_number}`, s]));
   return watches.map((w) => ({
     watch: w,

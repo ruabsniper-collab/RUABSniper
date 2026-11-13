@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSeatRefresh } from "../lib/useSeatRefresh";
 import { useLocation, useNavigate } from "react-router-dom";
 import { browseOpenSections, searchCourses, CREDITS_OPTIONS, LOCATION_OPTIONS } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
@@ -180,6 +181,7 @@ export function SearchPage() {
       searchRequest.current?.abort();
     };
   }, [query, runSearch]);
+  useSeatRefresh(runSearch, pathname === "/");
 
   const { pull, refreshing, threshold } = usePullToRefresh(
     () => Promise.all([runSearch(), refreshWatches()]).then(() => {}),

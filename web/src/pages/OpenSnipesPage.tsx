@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSeatRefresh } from "../lib/useSeatRefresh";
 import { useNavigate } from "react-router-dom";
 import { getWatchedSections, type WatchedSection } from "../lib/courses";
 import { addWatch, removeWatch } from "../lib/watches";
@@ -30,7 +31,7 @@ export function OpenSnipesPage() {
     setError(null);
     try {
       const data = await getWatchedSections();
-      setOpen(data.filter((w) => w.watch.last_status));
+      setOpen(data.filter((w) => w.section?.open === true));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load open snipes");
     } finally {
@@ -41,6 +42,7 @@ export function OpenSnipesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  useSeatRefresh(refresh);
 
   async function stopSniping(w: WatchedSection) {
     const { watch } = w;
@@ -73,7 +75,7 @@ export function OpenSnipesPage() {
         return section ? (
           <SectionRow
             key={watch.id}
-            section={{ ...section, open: true }}
+            section={section}
             isWatched
             onToggleWatch={() => stopSniping(w)}
             onClick={() => navigate(`/course/${section.course_id}?year=${watch.term_year}&code=${watch.term_code}`)}
