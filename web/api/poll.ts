@@ -57,8 +57,10 @@ async function fetchOpenIndexes(term: Term, campus = "NB"): Promise<Set<string>>
   });
   if (!res.ok) throw new Error(`SOC openSections.json ${res.status} ${res.statusText} (${url})`);
   const data = (await res.json()) as unknown;
-  const arr = Array.isArray(data) ? data : [];
-  return new Set(arr.map((v) => String(v)));
+  if (!Array.isArray(data) || !data.every((index) => /^[0-9]{1,6}$/.test(String(index)))) {
+    throw new Error("Invalid Rutgers open-seat response");
+  }
+  return new Set(data.map(String));
 }
 
 type WatchRow = {

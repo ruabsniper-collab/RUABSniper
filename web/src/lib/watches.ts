@@ -14,7 +14,7 @@ export async function listWatches(): Promise<Watch[]> {
   return (data ?? []) as Watch[];
 }
 
-export async function addWatch(term: Term, indexNumber: string, currentlyOpen: boolean): Promise<void> {
+export async function addWatch(term: Term, indexNumber: string, currentlyOpen: boolean | null): Promise<void> {
   const deviceId = getDeviceId();
   const { error } = await supabase.from("watches").upsert(
     {
@@ -22,7 +22,7 @@ export async function addWatch(term: Term, indexNumber: string, currentlyOpen: b
       term_year: term.year,
       term_code: term.code,
       index_number: indexNumber,
-      last_status: currentlyOpen,
+      last_status: currentlyOpen === true,
       // If it's already open when you add the watch, don't fire an
       // immediate "it opened!" push — only notify on the next real flip.
       notified_at: currentlyOpen ? new Date().toISOString() : null,

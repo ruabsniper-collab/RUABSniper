@@ -38,13 +38,13 @@ export function WatchesPage() {
     setError(null);
     try {
       const data = await getWatchedSections();
-      const newlyOpened = data.filter((w) => lastStatus.current.get(w.watch.id) === false && w.watch.last_status === true);
-      lastStatus.current = new Map(data.map((w) => [w.watch.id, w.watch.last_status]));
+      const newlyOpened = data.filter((w) => lastStatus.current.get(w.watch.id) === false && w.section?.open === true);
+      lastStatus.current = new Map(data.filter((w) => w.section?.open != null).map((w) => [w.watch.id, w.section!.open === true]));
       setWatched(data);
       // Published for BottomNav's badge dot (lib/watchStatus.ts) -- this
       // runs on every poll tick regardless of which tab is active, so the
       // dot stays live even from Search/My Schedule/Settings.
-      setOpenSnipeCount(data.filter((w) => w.watch.last_status).length);
+      setOpenSnipeCount(data.filter((w) => w.section?.open === true).length);
 
       if (newlyOpened.length > 0) {
         setJustOpenedIds(new Set(newlyOpened.map((w) => w.watch.id)));
@@ -92,7 +92,7 @@ export function WatchesPage() {
     await refresh(false);
   }
 
-  const openCount = watched.filter((w) => w.watch.last_status).length;
+  const openCount = watched.filter((w) => w.section?.open === true).length;
 
   return (
     <div>
@@ -129,14 +129,7 @@ export function WatchesPage() {
         return section ? (
           <SectionRow
             key={watch.id}
-            // The poller (backend/scripts/poll-and-notify.ts) tracks live
-            // open/closed status in watches.last_status, refreshed every
-            // ~10-20 minutes; sections.open comes from the catalog ingest,
-            // which only runs every 6 hours. last_status is the fresher,
-            // more trustworthy signal for exactly the page whose whole job
-            // is "what's the current status of what I'm watching" — so it
-            // overrides the section's own (possibly stale) open field here.
-            section={{ ...section, open: watch.last_status }}
+            section={section}
             isWatched
             justOpened={justOpenedIds.has(watch.id)}
             onToggleWatch={() => stopSniping(w)}

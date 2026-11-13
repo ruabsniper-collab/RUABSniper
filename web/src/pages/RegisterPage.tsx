@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useVerifiedOpen } from "../lib/useVerifiedOpen";
 import { useSearchParams } from "react-router-dom";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
@@ -37,6 +38,7 @@ export function RegisterPage() {
   // there's no earlier tap to have done it during.
   const [copied, setCopied] = useState(searchParams.get("copied") === "1");
   const [section, setSection] = useState<SectionWithCourse | null>(null);
+  const open = useVerifiedOpen(section);
   const [loading, setLoading] = useState(true);
 
   // Single place the "Copied!" -> "Copy index" reset happens, regardless of
@@ -63,7 +65,7 @@ export function RegisterPage() {
     }
     setLoading(true);
     const term: Term | undefined = yearParam && codeParam ? { year: Number(yearParam), code: Number(codeParam) } : undefined;
-    getSectionByIndex(indexNumber, term)
+    const loadSection = () => getSectionByIndex(indexNumber, term)
       .then((s) => {
         if (!cancelled) setSection(s);
       })
@@ -74,8 +76,13 @@ export function RegisterPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    void loadSection();
+    const refresh = setInterval(() => {
+      if (document.visibilityState === "visible") void loadSection();
+    }, 30_000);
     return () => {
       cancelled = true;
+      clearInterval(refresh);
     };
   }, [indexNumber, yearParam, codeParam]);
 
@@ -112,8 +119,8 @@ export function RegisterPage() {
             <span className="section-title">
               {section.courses.subject_code}:{section.courses.course_number} — {section.courses.title}
             </span>
-            <span className={`pill ${section.open ? "pill-open" : "pill-closed"}`}>
-              {section.open ? "OPEN" : "CLOSED"}
+            <span className={`pill ${open === null ? "pill-unknown" : open ? "pill-open" : "pill-closed"}`}>
+              {open === null ? "UNVERIFIED" : open ? "OPEN" : "CLOSED"}
             </span>
           </div>
           <p className="meta">
