@@ -7,7 +7,11 @@ import { listWatches } from "./watches";
 import { getAvailability, verifyAvailability } from "./availability";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
-const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at";
+const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at,section_listings:raw->section_listings";
+
+function sectionWithCourse(section: Section, course: Course): SectionWithCourse {
+  return { ...section, courses: { ...course, ...course.section_listings?.[section.index_number] } };
+}
 
 // Real values SOC uses for meeting_times[].campus on the NB campus (verified
 // against a live courses.json pull): "BUSCH", "COLLEGE AVENUE",
@@ -148,10 +152,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
       .eq("index_number", q)
       .abortSignal(signal);
     if (sectionsErr) throw sectionsErr;
-    sections = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
-      ...row,
-      courses: row.courses,
-    }));
+    sections = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => sectionWithCourse(row, row.courses));
   } else {
     let courseQuery = supabase
       .from("courses")
@@ -160,7 +161,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
       .eq("term_code", term.code);
 
     if (filters.credits != null) {
-      courseQuery = courseQuery.eq("credits", filters.credits);
+      courseQuery = courseQuery.or(`credits.eq.${filters.credits},raw->listing_credits.cs.[${filters.credits}]`);
     }
 
     if (q) {
@@ -169,13 +170,13 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
         // OR fall through to a normal text search too, since a short code
         // could also just be someone typing a subject abbreviation.
         courseQuery = courseQuery.or(
-          `core_codes.cs.{${q.toUpperCase()}},title.ilike.%${q}%,subject_description.ilike.%${q}%`,
+          `core_codes.cs.{${q.toUpperCase()}},title.ilike.%${q}%,subject_description.ilike.%${q}%,raw->>listing_titles.ilike.%${q}%`,
         );
       } else if (/^\d{1,3}$/.test(q)) {
         // Looks like a subject or course number.
         courseQuery = courseQuery.or(`subject_code.eq.${q.padStart(3, "0")},course_number.eq.${q}`);
       } else {
-        courseQuery = courseQuery.or(`title.ilike.%${q}%,subject_description.ilike.%${q}%`);
+        courseQuery = courseQuery.or(`title.ilike.%${q}%,subject_description.ilike.%${q}%,raw->>listing_titles.ilike.%${q}%`);
       }
     }
 
@@ -183,7 +184,17 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
     if (error) throw error;
 
     const courses = (data ?? []) as (Course & { sections: Section[] })[];
-    sections = courses.flatMap((c) => (c.sections ?? []).map((s) => ({ ...s, courses: c })));
+    sections = courses.flatMap((c) => (c.sections ?? []).map((s) => sectionWithCourse(s, c)));
+  }
+
+  if (filters.credits != null) sections = sections.filter((section) => section.courses.credits === filters.credits);
+  if (q && !/^[0-9]{1,6}$/.test(q)) {
+    const text = q.toLowerCase();
+    sections = sections.filter(({ courses }) =>
+      courses.title.toLowerCase().includes(text) ||
+      courses.subject_description?.toLowerCase().includes(text) ||
+      courses.core_codes.some((code) => code.toLowerCase() === text),
+    );
   }
 
   if (filters.locations && filters.locations.length > 0) {
@@ -283,8 +294,7 @@ export async function browseOpenSections(term: Term, signal: AbortSignal): Promi
   if (error) throw error;
 
   let sections: SectionWithCourse[] = ((sectionRows ?? []) as (Section & { courses: Course })[]).map((row) => ({
-    ...row,
-    courses: row.courses,
+    ...sectionWithCourse(row, row.courses),
     open: true,
     availabilityCheckedAt: live.checkedAt,
   }));
@@ -328,7 +338,7 @@ export async function getCourseSections(courseId: string): Promise<SectionWithCo
     .order("section_number", { ascending: true });
   if (sectionsErr) throw sectionsErr;
 
-  let sections: SectionWithCourse[] = (sectionRows ?? []).map((s) => ({ ...(s as Section), courses: course as Course }));
+  let sections: SectionWithCourse[] = (sectionRows ?? []).map((s) => sectionWithCourse(s as Section, course as Course));
 
   const instructorNames = new Set<string>();
   for (const s of sections) for (const i of s.instructors) instructorNames.add(normalizeInstructorName(i));
@@ -380,7 +390,7 @@ export async function getSectionByIndex(indexNumber: string, term?: Term): Promi
   if (!data) return null;
 
   const row = data as Section & { courses: Course };
-  let section: SectionWithCourse = { ...row, courses: row.courses };
+  let section: SectionWithCourse = sectionWithCourse(row, row.courses);
 
   if (section.instructors.length > 0) {
     const { data: ratings, error: ratingsErr } = await supabase
@@ -437,7 +447,7 @@ export async function getWatchedSections(): Promise<WatchedSection[]> {
       );
     if (error) throw error;
     sections = sections.concat(
-      ((data ?? []) as (Section & { courses: Course })[]).map((row) => ({ ...row, courses: row.courses })),
+      ((data ?? []) as (Section & { courses: Course })[]).map((row) => sectionWithCourse(row, row.courses)),
     );
   }
 

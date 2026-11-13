@@ -74,6 +74,8 @@ export function CourseDetailPage() {
     await refresh();
   }
 
+  const multipleListings = new Set(sections.map((section) => section.courses.title)).size > 1;
+
   return (
     <div>
       {error && <p className="error-text">{error}</p>}
@@ -89,9 +91,9 @@ export function CourseDetailPage() {
         <div style={{ marginBottom: 10 }}>
           <h2>
             {sections[0].courses.subject_code}:{sections[0].courses.course_number} —{" "}
-            {sections[0].courses.title}
+            {multipleListings ? "Course sections" : sections[0].courses.title}
           </h2>
-          {creditsLabel(sections[0].courses.credits) && (
+          {!multipleListings && creditsLabel(sections[0].courses.credits) && (
             <p className="meta">{creditsLabel(sections[0].courses.credits)}</p>
           )}
           {sections[0].courses.core_codes.length > 0 && (
