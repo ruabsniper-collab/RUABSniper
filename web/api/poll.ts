@@ -128,15 +128,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   async function sectionLabel(termYear: number, termCode: number, indexNumber: string): Promise<string> {
     const { data } = await supabaseAdmin
       .from("sections")
-      .select("section_number, courses(subject_code, course_number, title)")
+      .select("section_number, courses(subject_code, course_number, title, section_listings:raw->section_listings)")
       .eq("term_year", termYear)
       .eq("term_code", termCode)
       .eq("index_number", indexNumber)
       .maybeSingle();
-    const course = (data as { courses?: { subject_code?: string; course_number?: string; title?: string } | null })
+    const course = (data as { courses?: { subject_code?: string; course_number?: string; title?: string; section_listings?: Record<string, { title: string }> | null } | null })
       ?.courses;
     if (!course) return `index ${indexNumber}`;
-    return `${course.subject_code}:${course.course_number} ${course.title} (sec ${
+    const title = course.section_listings?.[indexNumber]?.title ?? course.title;
+    return `${course.subject_code}:${course.course_number} ${title} (sec ${
       (data as { section_number?: string })?.section_number ?? "?"
     }, index ${indexNumber})`;
   }

@@ -11,6 +11,7 @@ import "dotenv/config";
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { fetchCourses, parseInstructorNames, type SocCourse } from "../lib/soc.js";
 import { guessActiveTerms, termKey, termLabel, type Term } from "../lib/term.js";
+import { mergeCourseListings, parseCredits } from "../lib/courseListings.js";
 
 async function watchedTerms(): Promise<Term[]> {
   const { data, error } = await supabaseAdmin.from("watches").select("term_year, term_code");
@@ -30,29 +31,15 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 async function ingestTerm(term: Term, campus = "NB") {
+  const startedAt = new Date().toISOString();
   console.log(`[ingest] fetching ${termLabel(term)} (${campus})...`);
   const rawCourses: SocCourse[] = await fetchCourses(term, campus);
+  if (!Array.isArray(rawCourses) || rawCourses.length === 0) throw new Error("Rutgers returned an empty catalog");
   console.log(`[ingest] ${termLabel(term)}: ${rawCourses.length} courses from SOC`);
 
-  // SOC sometimes lists the same subject+courseNumber more than once (seen
-  // live on Fall 2026 — cross-listings/data quirks, not something we can
-  // control). Our `courses` table is unique on (term, campus, subject,
-  // course_number), and Postgres's upsert can't touch the same conflict key
-  // twice in one statement ("ON CONFLICT DO UPDATE command cannot affect row
-  // a second time") -- so merge duplicates here instead of crashing the
-  // whole ingest. Keeps the first listing's descriptive fields and unions
-  // every duplicate's sections so no section data is silently dropped.
-  const byKey = new Map<string, SocCourse[]>();
-  for (const c of rawCourses) {
-    const key = `${c.subject}::${c.courseNumber}`;
-    const group = byKey.get(key);
-    if (group) group.push(c);
-    else byKey.set(key, [c]);
-  }
-  const courses = [...byKey.values()].map((group) => ({
-    ...group[0],
-    sections: group.flatMap((c) => c.sections ?? []),
-  }));
+  // Preserve each section's source listing inside raw, including labs
+  // and lectures that share the same subject and course number.
+  const courses = mergeCourseListings(rawCourses);
   if (courses.length !== rawCourses.length) {
     console.log(
       `[ingest] ${termLabel(term)}: merged ${rawCourses.length} SOC listings into ${courses.length} unique courses`,
@@ -67,7 +54,7 @@ async function ingestTerm(term: Term, campus = "NB") {
     subject_description: c.subjectDescription ?? null,
     course_number: c.courseNumber,
     title: c.title,
-    credits: typeof c.credits === "number" ? c.credits : Number(c.credits) || null,
+    credits: parseCredits(c.credits),
     core_codes: (c.coreCodes ?? []).map((cc) => cc.coreCode).filter((x): x is string => Boolean(x)),
     raw: c,
     updated_at: new Date().toISOString(),
@@ -95,7 +82,7 @@ async function ingestTerm(term: Term, campus = "NB") {
   const sectionByIndex = new Map<string, Record<string, unknown>>();
   for (const c of courses) {
     const courseId = idByKey.get(`${c.subject}::${c.courseNumber}`);
-    if (!courseId) continue; // shouldn't happen, but don't crash the whole run over it
+    if (!courseId) throw new Error(`Missing course ID for ${c.subject}:${c.courseNumber}`);
     for (const s of c.sections ?? []) {
       if (!s.index || sectionByIndex.has(String(s.index))) continue;
       sectionByIndex.set(String(s.index), {
@@ -129,6 +116,24 @@ async function ingestTerm(term: Term, campus = "NB") {
     if (error) throw error;
   }
   console.log(`[ingest] ${termLabel(term)}: upserted ${sectionRows.length} sections`);
+
+  const obsoleteIds: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabaseAdmin.from("sections")
+      .select("id, courses!inner(campus)")
+      .eq("term_year", term.year).eq("term_code", term.code)
+      .eq("courses.campus", campus).lt("updated_at", startedAt)
+      .order("id").range(offset, offset + 999);
+    if (error) throw error;
+    obsoleteIds.push(...(data ?? []).map((row) => row.id as string));
+    if (!data || data.length < 1000) break;
+  }
+  for (const ids of chunk(obsoleteIds, 100)) {
+    const { error } = await supabaseAdmin.from("sections").delete()
+      .in("id", ids).lt("updated_at", startedAt);
+    if (error) throw error;
+  }
+  console.log(`[ingest] ${termLabel(term)}: removed ${obsoleteIds.length} obsolete sections`);
 }
 
 async function main() {
@@ -141,15 +146,18 @@ async function main() {
     return;
   }
 
+  let failed = false;
   for (const term of terms.values()) {
     try {
       await ingestTerm(term);
     } catch (err) {
+      failed = true;
       // One bad term shouldn't block the others (e.g. SOC has no data yet
       // for a not-quite-open-for-registration future term).
       console.error(`[ingest] failed for ${termLabel(term)}:`, err);
     }
   }
+  if (failed) throw new Error("One or more course imports failed");
 }
 
 main().then(

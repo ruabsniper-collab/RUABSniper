@@ -23,6 +23,7 @@ export type Course = {
   credits: number | null;
   core_codes: string[];
   updated_at: string;
+  section_listings?: Record<string, { title: string; credits: number | null; core_codes: string[] }> | null;
 };
 
 export type Section = {
