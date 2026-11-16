@@ -70,7 +70,7 @@ export async function pollOnce(): Promise<PollResult> {
   const openByTerm = new Map<string, Set<string>>();
   const termsChecked: PollResult["termsChecked"] = [];
   const termErrors: PollResult["termErrors"] = [];
-  for (const term of termsToCheck.values()) {
+  await Promise.all([...termsToCheck.values()].map(async (term) => {
     try {
       const openSet = await fetchOpenIndexes(term);
       openByTerm.set(termKey(term), openSet);
@@ -78,7 +78,7 @@ export async function pollOnce(): Promise<PollResult> {
     } catch (err) {
       termErrors.push({ term, message: err instanceof Error ? err.message : String(err) });
     }
-  }
+  }));
 
   let opened = 0;
   let closedAgain = 0;
