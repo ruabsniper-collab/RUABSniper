@@ -79,12 +79,15 @@ export async function fetchOpenIndexes(term: Term, campus = "NB"): Promise<Set<s
   const url = `${BASE}/openSections.json?year=${term.year}&term=${term.code}&campus=${campus}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "ruabsniper/0.1 (personal course tracker)" },
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) {
     throw new Error(`SOC openSections.json ${res.status} ${res.statusText} (${url})`);
   }
   const data = (await res.json()) as unknown;
   // openSections.json returns a flat array of index-number strings/numbers.
-  const arr = Array.isArray(data) ? data : [];
-  return new Set(arr.map((v) => String(v)));
+  if (!Array.isArray(data) || !data.every((index) => /^[0-9]{1,6}$/.test(String(index)))) {
+    throw new Error("Invalid Rutgers open-seat response");
+  }
+  return new Set(data.map(String));
 }

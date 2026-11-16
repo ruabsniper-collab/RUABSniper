@@ -1,5 +1,5 @@
 // The persistent sniper loop — polls the SOC "open sections" endpoint every
-// ~2.5-3.3 seconds, forever, instead of relying on an external per-minute
+// ~2.5-3.3 seconds between cycle starts, instead of relying on an external per-minute
 // cron trigger.
 //
 // Why this exists at all: every free scheduled-trigger service (GitHub
@@ -55,6 +55,7 @@ async function main() {
   let iteration = 0;
 
   while (!stopping) {
+    const startedAt = performance.now();
     iteration++;
     try {
       const result = await pollOnce();
@@ -77,8 +78,13 @@ async function main() {
       console.error(`[poll-worker] iteration failed (${consecutiveFailures} in a row):`, err);
     }
 
-    const backoff = consecutiveFailures > 0 ? Math.min(MAX_BACKOFF_MS, BASE_INTERVAL_MS * 2 ** consecutiveFailures) : 0;
-    const delay = Math.max(BASE_INTERVAL_MS, backoff) + Math.random() * JITTER_MS;
+    // Include request time in the normal interval so each check doesn't
+    // add another full sleep after its network round-trips. Keep checks
+    // sequential and retain the full retry delay after failures.
+    const jitter = Math.random() * JITTER_MS;
+    const delay = consecutiveFailures > 0
+      ? Math.min(MAX_BACKOFF_MS, BASE_INTERVAL_MS * 2 ** consecutiveFailures) + jitter
+      : Math.max(250, BASE_INTERVAL_MS + jitter - (performance.now() - startedAt));
     await sleep(delay);
   }
 
