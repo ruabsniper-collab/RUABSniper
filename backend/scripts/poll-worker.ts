@@ -1,5 +1,5 @@
 // The persistent sniper loop — polls the SOC "open sections" endpoint every
-// ~2.5-3.3 seconds between cycle starts, instead of relying on an external per-minute
+// ~2-2.4 seconds between cycle starts, instead of relying on an external per-minute
 // cron trigger.
 //
 // Why this exists at all: every free scheduled-trigger service (GitHub
@@ -35,10 +35,12 @@ import "dotenv/config";
 import { pollOnce } from "../lib/pollOnce.js";
 import { termLabel } from "../lib/term.js";
 
-const BASE_INTERVAL_MS = 2500;
-const JITTER_MS = 800;
+const BASE_INTERVAL_MS = 2000;
+const JITTER_MS = 400;
+const RETRY_INTERVAL_MS = 2500;
+const RETRY_JITTER_MS = 800;
 const MAX_BACKOFF_MS = 30_000;
-const HEARTBEAT_EVERY = 120; // ~ every 5-6 minutes at the base interval
+const HEARTBEAT_EVERY = 120; // ~ every 4-5 minutes at the base interval
 
 let stopping = false;
 process.on("SIGINT", () => { stopping = true; });
@@ -59,7 +61,10 @@ async function main() {
     iteration++;
     try {
       const result = await pollOnce();
-      consecutiveFailures = 0;
+      // A failed feed is reported in the result rather than thrown.
+      // Back off when every requested term fails; keep successful terms moving.
+      const allTermsFailed = result.termErrors.length > 0 && result.termsChecked.length === 0;
+      consecutiveFailures = allTermsFailed ? consecutiveFailures + 1 : 0;
 
       for (const { term, message } of result.termErrors) {
         console.error(`[poll-worker] fetch failed for ${termLabel(term)}: ${message}`);
@@ -81,10 +86,9 @@ async function main() {
     // Include request time in the normal interval so each check doesn't
     // add another full sleep after its network round-trips. Keep checks
     // sequential and retain the full retry delay after failures.
-    const jitter = Math.random() * JITTER_MS;
     const delay = consecutiveFailures > 0
-      ? Math.min(MAX_BACKOFF_MS, BASE_INTERVAL_MS * 2 ** consecutiveFailures) + jitter
-      : Math.max(250, BASE_INTERVAL_MS + jitter - (performance.now() - startedAt));
+      ? Math.min(MAX_BACKOFF_MS, RETRY_INTERVAL_MS * 2 ** consecutiveFailures) + Math.random() * RETRY_JITTER_MS
+      : Math.max(250, BASE_INTERVAL_MS + Math.random() * JITTER_MS - (performance.now() - startedAt));
     await sleep(delay);
   }
 
