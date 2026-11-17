@@ -1,15 +1,17 @@
 import { Route, Routes, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BottomNav } from "./components/BottomNav";
 import { ToastHost } from "./components/ToastHost";
-import { SearchPage } from "./pages/SearchPage";
-import { CourseDetailPage } from "./pages/CourseDetailPage";
+import { NotificationNavigation } from "./components/NotificationNavigation";
 import { RegisterPage } from "./pages/RegisterPage";
-import { OpenSnipesPage } from "./pages/OpenSnipesPage";
-import { WatchesPage } from "./pages/WatchesPage";
-import { MySchedulePage } from "./pages/MySchedulePage";
-import { SettingsPage } from "./pages/SettingsPage";
+const SearchPage = lazy(() => import("./pages/SearchPage").then((m) => ({ default: m.SearchPage })));
+const CourseDetailPage = lazy(() => import("./pages/CourseDetailPage").then((m) => ({ default: m.CourseDetailPage })));
+const OpenSnipesPage = lazy(() => import("./pages/OpenSnipesPage").then((m) => ({ default: m.OpenSnipesPage })));
+const WatchesPage = lazy(() => import("./pages/WatchesPage").then((m) => ({ default: m.WatchesPage })));
+const MySchedulePage = lazy(() => import("./pages/MySchedulePage").then((m) => ({ default: m.MySchedulePage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 
-// The 4 bottom-nav destinations stay mounted permanently instead of being
+// Visited bottom-nav destinations stay mounted instead of being
 // swapped in/out by <Routes> -- react-router unmounts whatever page isn't
 // the current route match, which was wiping every tab's component state
 // (a search query, its results, open filters) the moment you switched to
@@ -31,23 +33,34 @@ const TABS = [
 ];
 
 export default function App() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(TABS.some((tab) => tab.path === pathname) ? [pathname, "/watches"] : []));
+  useEffect(() => {
+    if (TABS.some((tab) => tab.path === pathname)) {
+      setVisitedTabs((visited) => visited.has(pathname) && visited.has("/watches") ? visited : new Set([...visited, pathname, "/watches"]));
+    }
+  }, [pathname]);
   const onStackPage = pathname.startsWith("/course/") || pathname === "/register" || pathname === "/watches/open";
 
   return (
     <>
+      <NotificationNavigation />
       <main className="app-main">
-        {TABS.map(({ path, Page }) => (
+        {TABS.filter(({ path }) => visitedTabs.has(path) || pathname === path).map(({ path, Page }) => (
           <div key={path} style={{ display: !onStackPage && pathname === path ? "block" : "none" }}>
-            <Page />
+            <Suspense fallback={<div className="skeleton-row" style={{ height: 120 }} />}>
+              <Page />
+            </Suspense>
           </div>
         ))}
         {onStackPage && (
-          <Routes>
-            <Route path="/course/:courseId" element={<CourseDetailPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/watches/open" element={<OpenSnipesPage />} />
-          </Routes>
+          <Suspense fallback={<div className="skeleton-row" style={{ height: 120 }} />}>
+            <Routes>
+              <Route path="/course/:courseId" element={<CourseDetailPage />} />
+              <Route path="/register" element={<RegisterPage key={search} />} />
+              <Route path="/watches/open" element={<OpenSnipesPage />} />
+            </Routes>
+          </Suspense>
         )}
       </main>
       <ToastHost />

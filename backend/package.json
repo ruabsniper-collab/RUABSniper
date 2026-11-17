@@ -8,6 +8,9 @@
     "match-professors": "tsx scripts/match-professors.ts",
     "poll-and-notify": "tsx scripts/poll-and-notify.ts",
     "poll-worker": "tsx scripts/poll-worker.ts",
+    "test:push": "node --import tsx --test tests/pushDelivery.test.ts",
+    "test:notification-navigation": "node --import tsx --test tests/notificationNavigation.test.ts",
+    "test:registration": "node --import tsx --test tests/registrationPage.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

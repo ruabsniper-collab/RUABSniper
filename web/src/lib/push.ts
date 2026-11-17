@@ -32,7 +32,7 @@ export async function getPushStatus(): Promise<PushStatus> {
 
 /** Registers the service worker (idempotent) and returns its registration. */
 export async function ensureServiceWorker(): Promise<ServiceWorkerRegistration> {
-  return navigator.serviceWorker.register("/sw.js");
+  return navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
 }
 
 /**

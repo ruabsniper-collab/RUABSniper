@@ -11,7 +11,7 @@
 
 import { supabaseAdmin } from "./supabaseAdmin.js";
 import { fetchOpenIndexes } from "./soc.js";
-import { sendPushToDevice } from "./webPush.js";
+import { canRetryPush, sendPushToDevice } from "./webPush.js";
 import { termKey, type Term } from "./term.js";
 
 type WatchRow = {
@@ -91,7 +91,10 @@ export async function pollOnce(): Promise<PollResult> {
 
     const isOpenNow = openSet.has(w.index_number);
 
-    if (isOpenNow && !w.last_status) {
+    if (isOpenNow && (!w.last_status || w.notified_at === null)) {
+      // Open + null notified_at means a previous delivery failed. Back off
+      // that device without slowing feed checks or other devices' alerts.
+      if (w.last_status && !canRetryPush(w.device_id)) continue;
       // closed -> open: notify just this watch's device, right away.
       //
       // This UPDATE ... WHERE last_status = false is the atomic claim on
@@ -106,18 +109,22 @@ export async function pollOnce(): Promise<PollResult> {
       // exactly one caller's WHERE clause still matches and gets a row
       // back; only that one is allowed to send. The loser affects zero
       // rows and silently skips -- no error, no double-notify.
-      const { data: claimed, error: claimErr } = await supabaseAdmin
+      // Pending retries instead compare last_status=true AND notified_at
+      // IS NULL; claiming sets a timestamp so concurrent retries also lose.
+      const claimedAt = new Date().toISOString();
+      let claim = supabaseAdmin
         .from("watches")
-        .update({ last_status: true, notified_at: new Date().toISOString() })
+        .update({ last_status: true, notified_at: claimedAt })
         .eq("id", w.id)
-        .eq("last_status", false)
-        .select("id");
+        .eq("last_status", w.last_status);
+      if (w.last_status) claim = claim.is("notified_at", null);
+      const { data: claimed, error: claimErr } = await claim.select("id");
       if (claimErr) throw claimErr;
       if (claimed && claimed.length > 0) {
-        opened++;
+        if (!w.last_status) opened++;
         const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-        openedLabels.push(`${label} (device ${w.device_id})`);
-        await sendPushToDevice(w.device_id, {
+        if (!w.last_status) openedLabels.push(`${label} (device ${w.device_id})`);
+        const delivery = await sendPushToDevice(w.device_id, {
           title: "A seat opened up!",
           body: label,
           // year/code let RegisterPage fetch this exact section instead of
@@ -127,6 +134,14 @@ export async function pollOnce(): Promise<PollResult> {
           // active at once (now normal, since Search added a term picker).
           url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}&year=${w.term_year}&code=${w.term_code}`,
         });
+        if (delivery === "retry") {
+          // Release only this attempt's claim. Retain the truthful OPEN
+          // status, and let the next eligible cycle retry while still open.
+          const { error } = await supabaseAdmin.from("watches")
+            .update({ notified_at: null })
+            .eq("id", w.id).eq("last_status", true).eq("notified_at", claimedAt);
+          if (error) throw error;
+        }
       }
     } else if (!isOpenNow && w.last_status) {
       // open -> closed again: reset so a future re-open notifies again.

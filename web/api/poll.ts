@@ -24,6 +24,9 @@
 
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { PushRetryState, type PushDeliveryResult } from "../server/pushRetry.js";
+
+const pushRetries = new PushRetryState();
 
 // Minimal local stand-ins for @vercel/node's request/response types --
 // pulling in the real package for two type names isn't worth it: its
@@ -70,6 +73,7 @@ type WatchRow = {
   term_code: number;
   index_number: string;
   last_status: boolean;
+  notified_at: string | null;
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -93,34 +97,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey && vapidSubject);
   if (pushConfigured) webpush.setVapidDetails(vapidSubject!, vapidPublicKey!, vapidPrivateKey!);
 
-  async function sendPushToDevice(deviceId: string, payload: { title: string; body: string; url: string }) {
-    if (!pushConfigured) {
-      console.warn("[poll] VAPID_* not set — skipping push send");
-      return;
-    }
-    const { data, error } = await supabaseAdmin
-      .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("device_id", deviceId)
-      .maybeSingle();
-    if (error) {
-      console.error(`[poll] failed to look up subscription for ${deviceId}:`, error);
-      return;
-    }
-    if (!data) return; // no subscription for this device — opt-in, not an error
-
+  async function sendPushToDevice(deviceId: string, payload: { title: string; body: string; url: string }): Promise<PushDeliveryResult> {
+    if (!pushRetries.canAttempt(deviceId)) return "retry";
     try {
-      await webpush.sendNotification(
+      if (!pushConfigured) {
+        console.warn("[poll] VAPID_* not set — skipping push send");
+        return pushRetries.failed(deviceId);
+      }
+      const { data, error } = await supabaseAdmin
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("device_id", deviceId)
+        .maybeSingle();
+      if (error) {
+        console.error(`[poll] failed to look up subscription for ${deviceId}:`, error);
+        return pushRetries.failed(deviceId);
+      }
+      if (!data) {
+        console.log(`[poll] no push subscription for device ${deviceId}: ${payload.body}`);
+        pushRetries.reset(deviceId);
+        return "skipped";
+      }
+
+      const response = await webpush.sendNotification(
         { endpoint: data.endpoint, keys: { p256dh: data.p256dh, auth: data.auth } },
         JSON.stringify(payload),
-        { urgency: "high" },
+        { urgency: "high", timeout: 10_000 },
       );
+      pushRetries.reset(deviceId);
+      console.log(`[poll] push accepted (${response.statusCode}) for device ${deviceId}: ${payload.body}`);
+      return "sent";
     } catch (err) {
       const statusCode = (err as { statusCode?: number }).statusCode;
       if (statusCode === 404 || statusCode === 410) {
         await supabaseAdmin.from("push_subscriptions").delete().eq("device_id", deviceId);
+        pushRetries.reset(deviceId);
+        return "skipped";
       } else {
-        console.error(`[poll] push send failed for ${deviceId}:`, err);
+        console.error(`[poll] push failed for device ${deviceId} (${statusCode ?? "network/configuration"}); will retry: ${payload.body}`);
+        return pushRetries.failed(deviceId, (err as { headers?: { "retry-after"?: string } }).headers?.["retry-after"]);
       }
     }
   }
@@ -175,27 +190,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const isOpenNow = openSet.has(w.index_number);
 
-    if (isOpenNow && !w.last_status) {
+    if (isOpenNow && (!w.last_status || w.notified_at === null)) {
+      if (w.last_status && !pushRetries.canAttempt(w.device_id)) continue;
       // Atomic claim via UPDATE ... WHERE last_status = false -- this
       // duplicates backend/lib/pollOnce.ts's own version of the same guard
       // (see its comment for the full story: this endpoint and
       // poll-worker.ts's persistent loop run concurrently by design, and a
       // plain read-then-send-then-write let both notify for the same
       // flip). Keep both copies in sync if this logic ever changes.
-      const { data: claimed, error: claimErr } = await supabaseAdmin
+      const claimedAt = new Date().toISOString();
+      let claim = supabaseAdmin
         .from("watches")
-        .update({ last_status: true, notified_at: new Date().toISOString() })
+        .update({ last_status: true, notified_at: claimedAt })
         .eq("id", w.id)
-        .eq("last_status", false)
-        .select("id");
+        .eq("last_status", w.last_status);
+      if (w.last_status) claim = claim.is("notified_at", null);
+      const { data: claimed, error: claimErr } = await claim.select("id");
       if (claimErr) {
         console.error(`[poll] failed to claim watch ${w.id}:`, claimErr);
         continue;
       }
       if (claimed && claimed.length > 0) {
-        opened++;
+        if (!w.last_status) opened++;
         const label = await sectionLabel(w.term_year, w.term_code, w.index_number);
-        await sendPushToDevice(w.device_id, {
+        const delivery = await sendPushToDevice(w.device_id, {
           title: "A seat opened up!",
           body: label,
           // year/code let RegisterPage fetch this exact section instead of
@@ -204,6 +222,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // comment. Keep both in sync if this logic ever changes.
           url: `/register?index=${w.index_number}&label=${encodeURIComponent(label)}&year=${w.term_year}&code=${w.term_code}`,
         });
+        if (delivery === "retry") {
+          const { error } = await supabaseAdmin.from("watches")
+            .update({ notified_at: null })
+            .eq("id", w.id).eq("last_status", true).eq("notified_at", claimedAt);
+          if (error) console.error(`[poll] failed to release delivery claim for watch ${w.id}: ${error.message}`);
+        }
       }
     } else if (!isOpenNow && w.last_status) {
       closedAgain++;
