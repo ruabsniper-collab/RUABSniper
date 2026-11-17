@@ -141,8 +141,21 @@ npm run poll-and-notify     # check watched sections once and push-notify on ope
 npm run poll-worker         # same, but loops forever every ~2-3s -- what actually runs on the VM
 ```
 
+After installing dependencies in both `backend` and `web`, run `npm run test:push` in `backend`
+to exercise both pollers with mocked database, Rutgers, and push responses. No real notifications
+or database writes are made by these tests.
+
+Temporary push failures leave the watch open with `notified_at = null`, meaning delivery is pending.
+Both pollers atomically claim pending retries as well as new openings. Retries use a per-device
+5–60 second backoff (honoring longer provider `Retry-After` values) and stop if the section closes.
+Push requests have a 10-second socket timeout. Logs distinguish service acceptance, failures, and
+missing subscriptions; service acceptance does not prove the phone displayed a notification.
+
 ## Known limitations (see the plan for why)
 
+- **Notification crash window**: a process stopping after it claims an opening but before it sends or
+  releases that claim can still lose an alert. This retry fix covers reported send/lookup failures;
+  eliminating the crash window requires a durable delivery queue with expiring claims.
 - **Notification latency**: with the fast-path VM worker running (see setup step 4), a few seconds; with
   only the Vercel + cron-job.org fallback running, up to ~60 seconds. Either way it depends on Rutgers'
   SOC API not rate-limiting or blocking the polling IP if you push the VM worker's interval much faster
