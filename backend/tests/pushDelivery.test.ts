@@ -3,6 +3,7 @@ import test from "node:test";
 import { createRequire } from "node:module";
 import webpush from "web-push";
 import { PushRetryState } from "../../web/server/pushRetry.js";
+import { CloseConfirmationState } from "../../web/server/closeConfirmation.js";
 
 // All traffic is intercepted. These tests never read .env or send real pushes.
 process.env.SUPABASE_URL = "https://example.test";
@@ -22,6 +23,18 @@ let open = new Set<string>();
 let failOnce = new Set<string>();
 let expired = new Set<string>();
 let sends: string[] = [];
+let onConfirmationWait: (() => void) | undefined;
+let beforeClose: (() => void) | undefined;
+
+// Advance the confirmation window without waiting in wall-clock time.
+// Other timers (including library timers) retain their real behavior.
+const realSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+  if (ms !== 6_000) return realSetTimeout(callback, ms, ...args);
+  clock += 6_000;
+  onConfirmationWait?.();
+  return realSetTimeout(callback, 0, ...args);
+}) as typeof setTimeout;
 
 function matches(row: Watch | { device_id: string }, url: URL): boolean {
   return [...url.searchParams].every(([key, value]) => {
@@ -40,8 +53,9 @@ globalThis.fetch = async (input, options = {}) => {
   const method = options.method ?? "GET";
   if (table === "watches" && method === "GET") return json(watches.filter(w => matches(w, url)));
   if (table === "watches" && method === "PATCH") {
-    const matched = watches.filter(w => matches(w, url));
     const update = JSON.parse(String(options.body));
+    if (update.last_status === false) beforeClose?.();
+    const matched = watches.filter(w => matches(w, url));
     for (const row of matched) Object.assign(row, update);
     return url.searchParams.has("select") ? json(matched.map(w => ({ id: w.id }))) : new Response(null, { status: 204 });
   }
@@ -93,6 +107,12 @@ function setup(prefix: string, count = 1) {
   subscriptions = new Set(watches.map(w => w.device_id));
   open = new Set(watches.map(w => w.index_number));
   failOnce = new Set(); expired = new Set(); sends = [];
+  onConfirmationWait = undefined; beforeClose = undefined;
+}
+
+async function closeSustained(mode: "worker" | "fallback") {
+  await run(mode);
+  if (mode === "worker") { clock += 6_000; await run(mode); }
 }
 
 for (const mode of ["worker", "fallback"] as const) {
@@ -121,7 +141,7 @@ for (const mode of ["worker", "fallback"] as const) {
     failOnce.add(watches[0].device_id);
     await run(mode);
     open.clear(); clock += 5_001;
-    await run(mode);
+    await closeSustained(mode);
     assert.equal(watches[0].last_status, false);
     assert.equal(watches[0].notified_at, null);
     assert.equal(sends.length, 1);
@@ -147,6 +167,47 @@ for (const mode of ["worker", "fallback"] as const) {
     watches[0].notified_at = new Date(clock).toISOString();
     await run(mode);
     assert.equal(sends.length, 0);
+  });
+
+  test(`${mode}: brief closed/open flapping does not repeatedly alert; sustained closure re-arms immediately`, async () => {
+    setup(`${mode}-flap`);
+    await run(mode);
+    for (let i = 0; i < 8; i++) {
+      open.clear(); clock += 2_000;
+      onConfirmationWait = () => open.add(watches[0].index_number);
+      await run(mode);
+      open.add(watches[0].index_number); clock += 2_000;
+      await run(mode);
+    }
+    assert.equal(sends.length, 1, "One alert across repeated transient closures");
+    onConfirmationWait = undefined;
+    open.clear(); await closeSustained(mode);
+    assert.equal(watches[0].last_status, false);
+    open.add(watches[0].index_number);
+    await run(mode);
+    assert.equal(sends.length, 2, "The next confirmed reopening alerts without delay");
+  });
+
+  test(`${mode}: a stale closure cannot clear a newer opening's delivery claim`, async () => {
+    setup(`${mode}-stale-close`);
+    await run(mode);
+    const newerClaim = "2099-01-01T00:00:00.000Z";
+    beforeClose = () => { watches[0].notified_at = newerClaim; };
+    open.clear(); await closeSustained(mode);
+    assert.equal(watches[0].last_status, true);
+    assert.equal(watches[0].notified_at, newerClaim);
+    open.add(watches[0].index_number);
+    await run(mode);
+    assert.equal(sends.length, 1);
+  });
+
+  test(`${mode}: a watch paused during a check cannot be re-armed by that stale check`, async () => {
+    setup(`${mode}-paused`);
+    await run(mode);
+    beforeClose = () => { watches[0].device_id = "paused-device"; };
+    open.clear(); await closeSustained(mode);
+    assert.equal(watches[0].last_status, true);
+    assert.ok(watches[0].notified_at);
   });
 }
 
@@ -200,4 +261,37 @@ test("provider Retry-After takes priority over the normal backoff", () => {
   retry.failed("invalid", "not a date");
   now += 5_000;
   assert.equal(retry.canAttempt("invalid"), true);
+});
+
+test("closure confirmation resets after an open reading or a changed delivery generation", () => {
+  let now = 0;
+  const state = new CloseConfirmationState(() => now);
+  assert.equal(state.observe("watch", false, true, "first"), false);
+  now = 5_999;
+  assert.equal(state.observe("watch", false, true, "first"), false);
+  now = 6_000;
+  assert.equal(state.observe("watch", false, true, "first"), true);
+  assert.equal(state.observe("watch", true, true, "first"), false);
+  assert.equal(state.observe("watch", false, true, "first"), false);
+  now += 6_000;
+  assert.equal(state.observe("watch", false, true, "newer"), false);
+  now += 6_000;
+  assert.equal(state.observe("watch", false, true, "newer"), true);
+  state.retain(new Set());
+  assert.equal(state.observe("watch", false, true, "newer"), false);
+});
+
+test("fallback sends other opening alerts before waiting to confirm closures", async () => {
+  setup("fallback-no-opening-delay", 2);
+  open = new Set([watches[0].index_number]);
+  watches[1].last_status = true;
+  watches[1].notified_at = new Date(clock).toISOString();
+  let waited = false;
+  onConfirmationWait = () => {
+    waited = true;
+    assert.deepEqual(sends, [watches[0].device_id], "The opening push is already sent");
+  };
+  await run("fallback");
+  assert.equal(waited, true);
+  assert.equal(watches[1].last_status, false);
 });

@@ -151,6 +151,14 @@ Both pollers atomically claim pending retries as well as new openings. Retries u
 Push requests have a 10-second socket timeout. Logs distinguish service acceptance, failures, and
 missing subscriptions; service acceptance does not prove the phone displayed a notification.
 
+Opening alerts are immediate. To prevent repeated alerts from brief OPEN/CLOSED feed flips, the
+laptop re-arms a watch only after repeated closed readings spanning at least six seconds. The
+fallback confirms closure with another feed request six seconds later, after sending opening
+alerts, so this also works on cold starts. Both paths compare the original delivery timestamp
+and device before updating a watch, preventing a stale close from erasing a newer delivery.
+A closure/reopening shorter than this confirmation window does not produce a second alert.
+Both pollers must be updated for this protection; an older laptop worker can still reset watches.
+
 Section notifications link directly to `/register` with the exact index and term. A short-lived,
 acknowledged tap intent also restores that route if the installed app resumes at its home screen.
 Registration controls render before course details load; the primary button starts copying the
