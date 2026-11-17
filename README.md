@@ -151,6 +151,13 @@ Both pollers atomically claim pending retries as well as new openings. Retries u
 Push requests have a 10-second socket timeout. Logs distinguish service acceptance, failures, and
 missing subscriptions; service acceptance does not prove the phone displayed a notification.
 
+Section notifications link directly to `/register` with the exact index and term. A short-lived,
+acknowledged tap intent also restores that route if the installed app resumes at its home screen.
+Registration controls render before course details load; the primary button starts copying the
+index and opens WebReg in the same tap. Visible registration pages refresh seat status every 3 seconds.
+Run `npm run test:notification-navigation` and `npm run test:registration` in `backend` for isolated
+launch/resume, stale-intent, rendering, and clipboard/popup regression checks.
+
 ## Known limitations (see the plan for why)
 
 - **Notification crash window**: a process stopping after it claims an opening but before it sends or

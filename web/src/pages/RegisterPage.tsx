@@ -4,12 +4,13 @@ import { useSearchParams } from "react-router-dom";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import { getSectionByIndex } from "../lib/courses";
+import { getAvailability } from "../lib/availability";
+import { copyIndexAndOpenWebReg } from "../lib/webReg";
 import { creditsLabel, meetingSummary } from "../components/SectionRow";
 import { RatingBadge } from "../components/RatingBadge";
 import type { SectionWithCourse } from "../types/db";
 import type { Term } from "../lib/term";
-
-const WEBREG_URL = "https://sims.rutgers.edu/webreg/";
+import { termLabel } from "../lib/term";
 
 // A website has no way to script a separate tab it opens on a different
 // origin — browsers block that as cross-origin scripting, confirmed live
@@ -63,7 +64,9 @@ export function RegisterPage() {
       setLoading(false);
       return;
     }
+    setSection(null);
     setLoading(true);
+    setCopied(searchParams.get("copied") === "1");
     const term: Term | undefined = yearParam && codeParam ? { year: Number(yearParam), code: Number(codeParam) } : undefined;
     const loadSection = () => getSectionByIndex(indexNumber, term)
       .then((s) => {
@@ -77,14 +80,40 @@ export function RegisterPage() {
         if (!cancelled) setLoading(false);
       });
     void loadSection();
-    const refresh = setInterval(() => {
-      if (document.visibilityState === "visible") void loadSection();
-    }, 30_000);
     return () => {
       cancelled = true;
-      clearInterval(refresh);
     };
-  }, [indexNumber, yearParam, codeParam]);
+  }, [indexNumber, yearParam, codeParam, searchParams]);
+
+  const sectionYear = section?.term_year;
+  const sectionCode = section?.term_code;
+  useEffect(() => {
+    if (!sectionYear || sectionCode === undefined) return;
+    const controller = new AbortController();
+    let inFlight = false;
+    const refresh = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const live = await getAvailability({ year: sectionYear, code: sectionCode }, controller.signal);
+        if (!controller.signal.aborted) setSection((current) => current?.index_number === indexNumber
+          ? { ...current, open: live.openIndexes.has(indexNumber), availabilityCheckedAt: live.checkedAt } : current);
+      } catch {
+        if (!controller.signal.aborted) setSection((current) => current?.index_number === indexNumber
+          ? { ...current, open: null, availabilityCheckedAt: null } : current);
+      } finally { inFlight = false; }
+    };
+    const check = () => { void refresh(); };
+    const interval = setInterval(check, 3_000);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [indexNumber, sectionYear, sectionCode]);
 
   async function copyIndex() {
     try {
@@ -101,15 +130,37 @@ export function RegisterPage() {
   }
 
   function openWebReg() {
-    window.open(WEBREG_URL, "_blank", "noopener,noreferrer");
+    copyIndexAndOpenWebReg(indexNumber, () => {
+      setCopied(true);
+      haptic("tap");
+    }, () => showToast("Couldn't copy — the index is above"));
   }
 
   return (
     <div>
-      <div className="banner">
-        Log in with your own NetID on WebReg — your password goes straight to Rutgers, never through this
-        app.
+      <h1 className="page-title">Register for this section</h1>
+      <p className="meta">{label || (section ? section.courses.title : "Section details are loading below")}</p>
+      <div className="index-bar">
+        <div>
+          <p className="index-number">Index {indexNumber || "—"}</p>
+          {yearParam && codeParam && <p className="meta">{termLabel({ year: Number(yearParam), code: Number(codeParam) })}</p>}
+        </div>
+        <span className={`pill ${open === null ? "pill-unknown" : open ? "pill-open" : "pill-closed"}`}>
+          {open === null ? loading ? "CHECKING" : "UNVERIFIED" : open ? "OPEN" : "CLOSED"}
+        </span>
       </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+        <button className="btn" style={{ minHeight: 52, fontSize: 16 }} onClick={openWebReg} disabled={!/^\d{1,6}$/.test(indexNumber)}>
+          Copy index & open WebReg →
+        </button>
+        <button className="btn btn-secondary" onClick={copyIndex} disabled={!/^\d{1,6}$/.test(indexNumber)}>
+          {copied ? "Copied!" : "Copy index only"}
+        </button>
+      </div>
+      <p className="hint" style={{ marginTop: 12 }}>
+        Paste the index into WebReg’s quick-add box. Sign in to Rutgers if asked.
+      </p>
+      {open === false && <p className="hint">Rutgers currently reports this section closed. Availability can change again.</p>}
 
       {loading && <div className="skeleton-row" style={{ marginTop: 12, height: 120 }} />}
 
@@ -151,24 +202,6 @@ export function RegisterPage() {
         </p>
       )}
 
-      <div className="index-bar">
-        <div>
-          <p className="index-number">Index {indexNumber}</p>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-        <button className="btn" onClick={copyIndex}>
-          {copied ? "Copied!" : "Copy index"}
-        </button>
-        <button className="btn btn-secondary" onClick={openWebReg}>
-          Open WebReg →
-        </button>
-      </div>
-
-      <p className="hint" style={{ marginTop: 16 }}>
-        Copy the index number above, open WebReg, log in, and paste it into the quick-add box.
-      </p>
     </div>
   );
 }

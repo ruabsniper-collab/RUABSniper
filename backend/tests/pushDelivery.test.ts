@@ -58,8 +58,14 @@ globalThis.fetch = async (input, options = {}) => {
 };
 
 // Both installed copies of web-push must be intercepted for the two runtimes.
-async function fakeSend(subscription: webpush.PushSubscription, _payload?: string | Buffer | null, options?: webpush.RequestOptions) {
+async function fakeSend(subscription: webpush.PushSubscription, payload?: string | Buffer | null, options?: webpush.RequestOptions) {
   const device = new URL(subscription.endpoint).pathname.slice(1);
+  const message = JSON.parse(String(payload));
+  const destination = new URL(message.url, "https://example.test");
+  assert.equal(destination.pathname, "/register");
+  assert.equal(destination.searchParams.get("index"), watches.find(w => w.device_id === device)?.index_number);
+  assert.equal(destination.searchParams.get("year"), "2027");
+  assert.equal(destination.searchParams.get("code"), "1");
   assert.equal(options?.urgency, "high");
   assert.equal(options?.timeout, 10_000);
   sends.push(device);
