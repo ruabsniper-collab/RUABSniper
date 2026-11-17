@@ -13,6 +13,9 @@ import { supabaseAdmin } from "./supabaseAdmin.js";
 import { fetchOpenIndexes } from "./soc.js";
 import { canRetryPush, sendPushToDevice } from "./webPush.js";
 import { termKey, type Term } from "./term.js";
+import { CloseConfirmationState } from "../../web/server/closeConfirmation.js";
+
+const closeConfirmations = new CloseConfirmationState();
 
 type WatchRow = {
   id: string;
@@ -59,6 +62,7 @@ export type PollResult = {
 
 export async function pollOnce(): Promise<PollResult> {
   const watches = await loadWatches();
+  closeConfirmations.retain(new Set(watches.map(w => w.id)));
   if (watches.length === 0) {
     return { checked: 0, opened: 0, closedAgain: 0, openedLabels: [], termsChecked: [], termErrors: [] };
   }
@@ -90,6 +94,7 @@ export async function pollOnce(): Promise<PollResult> {
     if (!openSet) continue; // that term's fetch failed this run; leave the watch untouched
 
     const isOpenNow = openSet.has(w.index_number);
+    const confirmedClosed = closeConfirmations.observe(w.id, isOpenNow, w.last_status, w.notified_at);
 
     if (isOpenNow && (!w.last_status || w.notified_at === null)) {
       // Open + null notified_at means a previous delivery failed. Back off
@@ -116,8 +121,9 @@ export async function pollOnce(): Promise<PollResult> {
         .from("watches")
         .update({ last_status: true, notified_at: claimedAt })
         .eq("id", w.id)
+        .eq("device_id", w.device_id)
         .eq("last_status", w.last_status);
-      if (w.last_status) claim = claim.is("notified_at", null);
+      claim = w.notified_at === null ? claim.is("notified_at", null) : claim.eq("notified_at", w.notified_at);
       const { data: claimed, error: claimErr } = await claim.select("id");
       if (claimErr) throw claimErr;
       if (claimed && claimed.length > 0) {
@@ -143,10 +149,15 @@ export async function pollOnce(): Promise<PollResult> {
           if (error) throw error;
         }
       }
-    } else if (!isOpenNow && w.last_status) {
-      // open -> closed again: reset so a future re-open notifies again.
-      closedAgain++;
-      await supabaseAdmin.from("watches").update({ last_status: false, notified_at: null }).eq("id", w.id);
+    } else if (confirmedClosed) {
+      // Re-arm only after sustained closure, and only for the generation
+      // we read. A delayed close must not erase a newer opening claim.
+      let closing = supabaseAdmin.from("watches").update({ last_status: false, notified_at: null })
+        .eq("id", w.id).eq("device_id", w.device_id).eq("last_status", true);
+      closing = w.notified_at === null ? closing.is("notified_at", null) : closing.eq("notified_at", w.notified_at);
+      const { data: closed, error } = await closing.select("id");
+      if (error) throw error;
+      closedAgain += closed?.length ?? 0;
     }
   }
 

@@ -183,6 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let opened = 0;
   let closedAgain = 0;
+  const closingCandidates: WatchRow[] = [];
 
   for (const w of watches) {
     const openSet = openByTerm.get(termKey({ year: w.term_year, code: w.term_code }));
@@ -203,8 +204,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from("watches")
         .update({ last_status: true, notified_at: claimedAt })
         .eq("id", w.id)
+        .eq("device_id", w.device_id)
         .eq("last_status", w.last_status);
-      if (w.last_status) claim = claim.is("notified_at", null);
+      claim = w.notified_at === null ? claim.is("notified_at", null) : claim.eq("notified_at", w.notified_at);
       const { data: claimed, error: claimErr } = await claim.select("id");
       if (claimErr) {
         console.error(`[poll] failed to claim watch ${w.id}:`, claimErr);
@@ -230,8 +232,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
     } else if (!isOpenNow && w.last_status) {
-      closedAgain++;
-      await supabaseAdmin.from("watches").update({ last_status: false, notified_at: null }).eq("id", w.id);
+      closingCandidates.push(w);
+    }
+  }
+
+  // Serverless instances may be new on every invocation. Confirm closures
+  // within this request rather than relying on memory surviving cold starts.
+  // Send all opening alerts first, so this delay never delays those pushes.
+  if (closingCandidates.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, 6_000));
+    const confirmationFeeds = new Map<string, Set<string>>();
+    const closingTerms = new Map<string, Term>();
+    for (const w of closingCandidates) closingTerms.set(termKey({ year: w.term_year, code: w.term_code }), { year: w.term_year, code: w.term_code });
+    await Promise.all([...closingTerms.values()].map(async term => {
+      try {
+        confirmationFeeds.set(termKey(term), await fetchOpenIndexes(term));
+      } catch (err) {
+        termErrors.push(`${termLabel(term)} closure confirmation: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }));
+    for (const w of closingCandidates) {
+      const confirmed = confirmationFeeds.get(termKey({ year: w.term_year, code: w.term_code }));
+      if (!confirmed || confirmed.has(w.index_number)) continue;
+      let closing = supabaseAdmin.from("watches").update({ last_status: false, notified_at: null })
+        .eq("id", w.id).eq("device_id", w.device_id).eq("last_status", true);
+      closing = w.notified_at === null ? closing.is("notified_at", null) : closing.eq("notified_at", w.notified_at);
+      const { data: closed, error } = await closing.select("id");
+      if (error) console.error(`[poll] failed to confirm closure for watch ${w.id}: ${error.message}`);
+      else closedAgain += closed?.length ?? 0;
     }
   }
 
