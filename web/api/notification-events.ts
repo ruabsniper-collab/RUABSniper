@@ -1,4 +1,4 @@
-import { APP_VERSION } from "../src/lib/appVersion";
+import { APP_VERSION } from "../src/lib/appVersion.js";
 
 const EVENTS = new Set(["sw-push", "sw-click-data", "sw-click-tag", "sw-stored", "sw-client", "sw-navigated", "sw-navigation-failed", "sw-opened", "app-start", "app-inbox", "app-ack", "route-rendered"]);
 type Request = { query: Record<string, string | string[] | undefined> };
