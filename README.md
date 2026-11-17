@@ -157,6 +157,9 @@ Registration controls render before course details load; the primary button star
 index and opens WebReg in the same tap. Visible registration pages refresh seat status every 3 seconds.
 Run `npm run test:notification-navigation` and `npm run test:registration` in `backend` for isolated
 launch/resume, stale-intent, rendering, and clipboard/popup regression checks.
+The app also checks its local tap inbox once per second to recover missed resume events. A section
+URL is retained in the notification tag as a fallback if notification data is absent. Explicitly
+labeled diagnostic test links alone emit tap-stage logs; normal alerts do not send this telemetry.
 
 ## Known limitations (see the plan for why)
 

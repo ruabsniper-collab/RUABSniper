@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import { MessageChannel } from "node:worker_threads";
@@ -11,6 +11,8 @@ const target = "/register?index=13913&year=2027&code=1&label=Organic%20Chemistry
 const key = origin + "/__ruab_notification_navigation__";
 const source = await readFile(new URL("../../web/public/sw.js", import.meta.url), "utf8");
 const tick = () => new Promise(r => setTimeout(r, 25));
+const disposers: Array<() => void> = [];
+afterEach(() => { disposers.splice(0).forEach(dispose => dispose()); });
 
 class Events {
   listeners = new Map<string, Set<(event: any) => void>>();
@@ -39,15 +41,18 @@ function harness(cacheStorage = storage()) {
     history: { replaceState(_state: unknown, _title: string, url: string) { browser.location.href = new URL(url, origin).href; } },
   });
   const document = Object.assign(new Events(), { visibilityState: "visible" });
-  const serviceWorker = Object.assign(new Events(), { ready: null as any, controller: null as any });
+  const serviceWorker = Object.assign(new Events(), { ready: null as any, controller: null as any, async getRegistration(): Promise<any> { return { active: worker }; } });
   const opened: string[] = [];
+  const shown: Array<{ title: string; options: any }> = [];
+  const traces: URL[] = [];
   let windows: any[] = [];
   const self = Object.assign(sw, {
     location: { origin }, skipWaiting() {},
     clients: { async claim() {}, async matchAll() { return windows; }, async openWindow(url: string) { opened.push(url); return null; } },
-    registration: { async showNotification() {} },
+    registration: { async showNotification(title: string, options: any) { shown.push({ title, options }); } },
   });
-  runInNewContext(source, { self, caches: cacheStorage, URL, Response, crypto: { randomUUID }, MessageChannel, setTimeout, clearTimeout, console });
+  runInNewContext(source, { self, caches: cacheStorage, URL, URLSearchParams, Response, crypto: { randomUUID }, MessageChannel, setTimeout, clearTimeout, console,
+    fetch: async (url: URL) => { traces.push(new URL(String(url))); return new Response("{}"); } });
   const dispatch = async (type: string, extra: Record<string, unknown>) => {
     const pending: Promise<unknown>[] = [];
     sw.emit(type, { ...extra, waitUntil(promise: Promise<unknown>) { pending.push(promise); } });
@@ -62,12 +67,16 @@ function harness(cacheStorage = storage()) {
   Object.defineProperty(globalThis, "caches", { configurable: true, value: cacheStorage });
   Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: (fn: () => void) => setTimeout(fn, 0) });
   const routes: string[] = [];
-  const connectApp = () => installNotificationNavigation(url => {
-    routes.push(url);
-    browser.history.replaceState(null, "", url);
-  });
+  const connectApp = () => {
+    const dispose = installNotificationNavigation(url => {
+      routes.push(url);
+      browser.history.replaceState(null, "", url);
+    });
+    disposers.push(dispose);
+    return dispose;
+  };
   const click = (url = target) => dispatch("notificationclick", { notification: { data: { url }, close() {} } });
-  return { cacheStorage, browser, document, serviceWorker, worker, dispatch, routes, opened, click, connectApp,
+  return { cacheStorage, browser, document, serviceWorker, worker, dispatch, routes, opened, shown, traces, click, connectApp,
     setWindows(value: any[]) { windows = value; } };
 }
 
@@ -126,6 +135,47 @@ test("foreground recovery handles a notification whose immediate message was mis
   assert.equal(h.browser.location.search, new URL(origin + target).search);
   assert.equal(h.cacheStorage.entries.size, 0);
   dispose();
+});
+
+test("local inbox polling recovers a tap even when the app receives no resume event or worker message", async () => {
+  const h = harness();
+  h.document.visibilityState = "hidden";
+  // No worker message/reply can arrive, and no focus/visibility event fires.
+  h.serviceWorker.ready = new Promise(() => {});
+  const dispose = h.connectApp();
+  await tick();
+  await h.click();
+  assert.equal(h.browser.location.pathname, "/");
+  await new Promise(resolve => setTimeout(resolve, 1_100));
+  assert.equal(h.browser.location.searchParams.get("index"), "13913");
+  assert.equal(h.cacheStorage.entries.size, 0);
+  h.browser.history.replaceState(null, "", "/settings");
+  await new Promise(resolve => setTimeout(resolve, 1_100));
+  assert.equal(h.browser.location.pathname, "/settings", "Handled intents must not hijack later navigation");
+  dispose();
+});
+
+test("notification tag preserves the section URL if notification data is missing", async () => {
+  const h = harness();
+  await h.dispatch("notificationclick", { notification: { tag: `ruab:${origin + target}`, close() {} } });
+  assert.equal(h.opened[0], origin + target);
+});
+
+test("only a labeled test emits tap-stage diagnostics and identifies the updated worker", async () => {
+  const h = harness();
+  const url = origin + target + "&notificationTest=" + randomUUID();
+  await h.dispatch("push", { data: { json: () => ({ title: "Section-link test", body: "Navigation test", url }) } });
+  assert.match(h.shown[0].title, /updated/);
+  assert.equal(h.shown[0].options.data.url, url);
+  assert.equal(h.shown[0].options.tag, `ruab:${url}`);
+  await h.dispatch("notificationclick", { notification: { ...h.shown[0].options, close() {} } });
+  assert.ok(h.traces.some(t => t.searchParams.get("event") === "sw-push"));
+  assert.ok(h.traces.some(t => t.searchParams.get("event") === "sw-click-data"));
+  assert.ok(h.traces.some(t => t.searchParams.get("event") === "sw-stored"));
+  assert.ok(h.traces.some(t => t.searchParams.get("event") === "sw-opened"));
+  const normal = harness();
+  await normal.dispatch("push", { data: { json: () => ({ title: "A seat opened", body: "Index 13913", url: origin + target }) } });
+  assert.equal(normal.traces.length, 0);
 });
 
 test("a late acknowledgement cannot erase a newer section and the intent survives worker restart", async () => {

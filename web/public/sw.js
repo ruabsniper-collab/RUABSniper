@@ -3,6 +3,7 @@
 const NAV_CACHE = "ruab-notification-navigation-v1";
 const NAV_KEY = new URL("/__ruab_notification_navigation__", self.location.origin).href;
 const NAV_TTL_MS = 120_000;
+const NAV_VERSION = "2026.11.17.2";
 let navigationWork = Promise.resolve();
 let latestClickId;
 function navigationStore(work) {
@@ -17,6 +18,12 @@ function targetUrl(value) {
     if (url.pathname === "/register" && !/^\d{1,6}$/.test(url.searchParams.get("index") || "")) return new URL("/watches", self.location.origin);
     return url;
   } catch { return new URL("/watches", self.location.origin); }
+}
+function traceTest(event, target) {
+  const trace = target.searchParams.get("notificationTest");
+  if (!trace || !/^[a-f0-9-]{36}$/.test(trace) || typeof fetch !== "function") return Promise.resolve();
+  const query = new URLSearchParams({ event, trace, index: target.searchParams.get("index") || "", version: NAV_VERSION });
+  return fetch(new URL(`/api/notification-events?${query}`, self.location.origin), { cache: "no-store" }).catch(() => {});
 }
 async function pendingNavigation(cache) {
   const response = await cache.match(NAV_KEY);
@@ -47,9 +54,12 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 self.addEventListener("push", (event) => {
   let data = { title: "RUAB Sniper", body: "A watched section changed.", url: "/watches" };
   try { if (event.data) data = { ...data, ...event.data.json() }; } catch {}
-  event.waitUntil(self.registration.showNotification(data.title, {
+  const target = targetUrl(data.url);
+  const title = target.searchParams.has("notificationTest") ? `${data.title} · updated` : data.title;
+  event.waitUntil(traceTest("sw-push", target));
+  event.waitUntil(self.registration.showNotification(title, {
     body: data.body, icon: "/icon.png", badge: "/icon.png",
-    data: { url: targetUrl(data.url).href },
+    data: { url: target.href }, tag: `ruab:${target.href}`,
   }));
 });
 function navigateInApp(client, intent) {
@@ -70,28 +80,38 @@ function navigateInApp(client, intent) {
 }
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = targetUrl(event.notification.data?.url);
+  const tagUrl = event.notification.tag?.startsWith("ruab:") ? event.notification.tag.slice(5) : undefined;
+  const target = targetUrl(event.notification.data?.url || tagUrl);
+  const traces = [traceTest(event.notification.data?.url ? "sw-click-data" : "sw-click-tag", target)];
+  const record = (step) => { traces.push(traceTest(step, target)); };
   const intent = { id: crypto.randomUUID(), url: target.href, clickedAt: Date.now() };
   latestClickId = intent.id;
   event.waitUntil((async () => {
-    // Some installed-app launches resume at the manifest's home URL.
-    // Save the section so bootstrap/foreground handling can recover it.
-    const [, windows] = await Promise.all([
-      target.pathname === "/register"
-        ? navigationStore((cache) => cache.put(NAV_KEY, new Response(JSON.stringify(intent)))).catch(() => {})
-        : Promise.resolve(),
-      self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []),
-    ]);
-    if (latestClickId !== intent.id) return;
-    const existing = windows.find((client) => client.focused) || windows.find((client) => "navigate" in client);
-    if (existing) {
-      if (target.pathname === "/register" && await navigateInApp(existing, intent)) return;
+    try {
+      // Some installed-app launches resume at the manifest's home URL.
+      // Save the section so bootstrap/foreground handling can recover it.
+      const [, windows] = await Promise.all([
+        target.pathname === "/register"
+          ? navigationStore((cache) => cache.put(NAV_KEY, new Response(JSON.stringify(intent))))
+            .then(() => { record("sw-stored"); }).catch(() => {})
+          : Promise.resolve(),
+        self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []),
+      ]);
       if (latestClickId !== intent.id) return;
-      try {
-        const navigated = await existing.navigate(target.href);
-        if (navigated) { await navigated.focus(); return; }
-      } catch { /* A suspended client must not swallow the tap. */ }
-    }
-    if (latestClickId === intent.id) await self.clients.openWindow(target.href);
+      const existing = windows.find((client) => client.focused) || windows.find((client) => "navigate" in client);
+      if (existing) {
+        record("sw-client");
+        if (target.pathname === "/register" && await navigateInApp(existing, intent)) return;
+        if (latestClickId !== intent.id) return;
+        try {
+          const navigated = await existing.navigate(target.href);
+          if (navigated) { record("sw-navigated"); await navigated.focus(); return; }
+        } catch { record("sw-navigation-failed"); }
+      }
+      if (latestClickId === intent.id) {
+        await self.clients.openWindow(target.href);
+        record("sw-opened");
+      }
+    } finally { await Promise.allSettled(traces); }
   })());
 });

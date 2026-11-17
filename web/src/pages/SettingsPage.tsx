@@ -3,6 +3,7 @@ import { disablePush, enablePush, getPushStatus, type PushStatus } from "../lib/
 import { getTheme, setTheme, type ThemePref } from "../lib/theme";
 import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
+import { APP_VERSION } from "../lib/appVersion";
 
 const STATUS_COPY: Record<PushStatus, string> = {
   unsupported: "This browser doesn't support push notifications.",
@@ -98,6 +99,14 @@ export function SettingsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="card">
+        <h3>App updates</h3>
+        <p className="hint">Version {APP_VERSION}</p>
+        <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={() => window.location.replace(`/settings?refresh=${Date.now()}`)}>
+          Refresh app
+        </button>
+        <p className="hint" style={{ marginTop: 8 }}>Reload the latest version. Your saved snipes stay on this device.</p>
+      </div>
       <div className="card">
         <h3>Appearance</h3>
         <p className="hint">"System" follows your phone/browser's own light or dark setting.</p>
