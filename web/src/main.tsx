@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { applyTheme, getTheme } from "./lib/theme";
 import { restoreNotificationOnLaunch } from "./lib/notificationNavigation";
+import { traceNotification } from "./lib/notificationTrace";
 import "./styles.css";
 
 // The data-theme attribute itself was already set (if any) by the inline
@@ -23,10 +24,13 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-void restoreNotificationOnLaunch().finally(() => createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </StrictMode>,
-));
+void restoreNotificationOnLaunch().finally(() => {
+  traceNotification("app-start", window.location.href);
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </StrictMode>,
+  );
+});

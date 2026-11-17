@@ -1,8 +1,15 @@
+import { traceNotification } from "./notificationTrace";
+
 const NAV_CACHE = "ruab-notification-navigation-v1";
 const NAV_PATH = "/__ruab_notification_navigation__";
 const NAV_TTL_MS = 120_000;
 
 type NavigationIntent = { id: string; url: string; clickedAt: number };
+
+async function readPendingIntent(): Promise<unknown> {
+  const cache = await caches.open(NAV_CACHE);
+  return (await cache.match(new URL(NAV_PATH, window.location.origin).href))?.json();
+}
 
 function validIntent(value: unknown): NavigationIntent | null {
   if (!value || typeof value !== "object") return null;
@@ -22,9 +29,7 @@ export async function restoreNotificationOnLaunch(): Promise<void> {
   if (!("caches" in window)) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const read = caches.open(NAV_CACHE)
-      .then((cache) => cache.match(new URL(NAV_PATH, window.location.origin).href))
-      .then((response) => response?.json()).catch(() => null);
+    const read = readPendingIntent().catch(() => null);
     const intent = validIntent(await Promise.race([
       read,
       new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 150); }),
@@ -40,20 +45,32 @@ export function installNotificationNavigation(navigate: (url: string) => void): 
   let disposed = false;
   let latestId: string | null = null;
   let latestClickedAt = -Infinity;
+  const handled = new Set<string>();
+  let reading = false;
   const cleanups = new Set<() => void>();
+  const acknowledge = (intent: NavigationIntent, worker: ServiceWorker | null, reply?: MessagePort) => {
+    const message = { type: "RUAB_NOTIFICATION_ACK", id: intent.id };
+    let posted = false;
+    try { if (worker) { worker.postMessage(message); posted = true; } } catch {}
+    if (!posted) void navigator.serviceWorker.getRegistration().then((registration) => registration?.active?.postMessage(message)).catch(() => {});
+    reply?.postMessage({ handled: true, id: intent.id });
+    traceNotification("app-ack", intent.url);
+  };
   const receive = (value: unknown, worker: ServiceWorker | null, reply?: MessagePort, recovery = false) => {
     const intent = validIntent(value);
     if (disposed || !intent) return;
+    if (handled.has(intent.id)) { acknowledge(intent, worker, reply); return; }
     if (intent.clickedAt < latestClickedAt ||
         (recovery && intent.clickedAt === latestClickedAt && latestId !== null && latestId !== intent.id)) return;
     latestId = intent.id;
     latestClickedAt = intent.clickedAt;
+    traceNotification("app-inbox", intent.url);
     if (window.location.pathname + window.location.search !== intent.url) navigate(intent.url);
     // Let the router render the section before acknowledging the tap.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (disposed || latestId !== intent.id) return;
-      worker?.postMessage({ type: "RUAB_NOTIFICATION_ACK", id: intent.id });
-      reply?.postMessage({ handled: true, id: intent.id });
+      handled.add(intent.id);
+      acknowledge(intent, worker, reply);
     }));
   };
   const onMessage = (event: MessageEvent) => {
@@ -61,11 +78,18 @@ export function installNotificationNavigation(navigate: (url: string) => void): 
       receive(event.data.intent, event.source as ServiceWorker | null, event.ports[0]);
     }
   };
+  const recoverLocal = () => {
+    if (disposed || reading) return;
+    reading = true;
+    void readPendingIntent().then((value) => receive(value, navigator.serviceWorker.controller, undefined, true))
+      .catch(() => {}).finally(() => { reading = false; });
+  };
   const recover = () => {
     if (disposed || document.visibilityState !== "visible") return;
+    recoverLocal();
     void navigator.serviceWorker.ready.then((registration) => {
       if (disposed) return;
-      const worker = navigator.serviceWorker.controller ?? registration.active;
+      const worker = registration.active ?? navigator.serviceWorker.controller;
       if (!worker) return;
       const channel = new MessageChannel();
       const finish = () => { clearTimeout(timer); channel.port1.close(); cleanups.delete(finish); };
@@ -82,6 +106,10 @@ export function installNotificationNavigation(navigate: (url: string) => void): 
   navigator.serviceWorker.addEventListener("controllerchange", recover);
   document.addEventListener("visibilitychange", recover);
   window.addEventListener("focus", recover);
+  window.addEventListener("pageshow", recover);
+  // A resumed installed app can miss events or retain stale visibility.
+  // This is only a local inbox read; background tabs naturally throttle it.
+  const inboxInterval = setInterval(recoverLocal, 1_000);
   recover();
   return () => {
     disposed = true;
@@ -89,6 +117,8 @@ export function installNotificationNavigation(navigate: (url: string) => void): 
     navigator.serviceWorker.removeEventListener("controllerchange", recover);
     document.removeEventListener("visibilitychange", recover);
     window.removeEventListener("focus", recover);
+    window.removeEventListener("pageshow", recover);
+    clearInterval(inboxInterval);
     cleanups.forEach((finish) => finish());
     cleanups.clear();
   };
