@@ -21,6 +21,7 @@ import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import { usePullToRefresh } from "../lib/usePullToRefresh";
 import type { SectionWithCourse } from "../types/db";
+import type { SearchScope } from "../lib/courseSearch";
 
 function sectionLabel(section: SectionWithCourse): string {
   return `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
@@ -42,7 +43,9 @@ export function SearchPage() {
   // (if it's still current) before guessing fresh.
   const [term, setTerm] = useState<Term>(() => loadTermPreference() ?? guessCurrentTerm());
   const [query, setQuery] = useState("");
+  const [searchScope, setSearchScope] = useState<SearchScope>("all");
   const [minRating, setMinRating] = useState<number | null>(null);
+  const [minRatingCount, setMinRatingCount] = useState(0);
   const [creditsFilter, setCreditsFilter] = useState<number | null>(null);
   const [includeUnrated, setIncludeUnrated] = useState(true);
   const [requireRmpMatch, setRequireRmpMatch] = useState(false);
@@ -73,6 +76,7 @@ export function SearchPage() {
   const hasAnyFilter =
     query.trim() !== "" ||
     minRating != null ||
+    minRatingCount > 0 ||
     creditsFilter != null ||
     requireRmpMatch ||
     sortByRating ||
@@ -131,7 +135,9 @@ export function SearchPage() {
         : await searchCourses({
             term,
             query,
+            searchScope,
             minRating: minRating ?? undefined,
+            minRatingCount: minRatingCount || undefined,
             credits: creditsFilter ?? undefined,
             includeUnratedWhenFiltering: includeUnrated,
             requireRmpMatch,
@@ -159,7 +165,9 @@ export function SearchPage() {
     hasAnyFilter,
     term,
     query,
+    searchScope,
     minRating,
+    minRatingCount,
     creditsFilter,
     includeUnrated,
     requireRmpMatch,
@@ -260,11 +268,20 @@ export function SearchPage() {
         </select>
       </header>
       <NotificationPrompt />
+      <div className="filter-row" role="group" aria-label="Search in">
+        <span className="filter-label">Search in</span>
+        <div className="chip-row">
+          {([{ value: "all", label: "Everything" }, { value: "subject", label: "Subject" }, { value: "core", label: "Core code" }] as const).map(option => (
+            <button key={option.value} className={`chip ${searchScope === option.value ? "active" : ""}`}
+              aria-pressed={searchScope === option.value} onClick={() => setSearchScope(option.value)}>{option.label}</button>
+          ))}
+        </div>
+      </div>
       <div className="search-field">
         <input
           className="input search-input"
           aria-label="Search courses"
-          placeholder="Search by name, subject, course #, core code, or index #"
+          placeholder={searchScope === "subject" ? "Subject name or number, e.g. Biology or 119" : searchScope === "core" ? "Core code, e.g. HST, NS, or WCd" : "Course, subject, core code, or index #"}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}
@@ -275,6 +292,7 @@ export function SearchPage() {
           </button>
         )}
       </div>
+      {searchScope === "core" && <p className="hint">Enter one core code. Uppercase and lowercase both work.</p>}
 
       <div className="filter-row">
         <span className="filter-label">Min RMP rating</span>
@@ -291,12 +309,25 @@ export function SearchPage() {
         </div>
       </div>
 
+      <div className="filter-row" role="group" aria-label="Minimum professor rating count">
+        <span className="filter-label">Minimum number of RMP ratings</span>
+        <div className="chip-row">
+          {[0, 5, 10, 20, 50].map(count => (
+            <button key={count} className={`chip ${minRatingCount === count ? "active" : ""}`}
+              aria-pressed={minRatingCount === count} onClick={() => setMinRatingCount(count)}>
+              {count === 0 ? "Any" : `${count}+`}
+            </button>
+          ))}
+        </div>
+        {minRatingCount > 0 && <p className="hint">Every listed instructor must have at least {minRatingCount} ratings. Instructors with no matched rating count are hidden.</p>}
+      </div>
+
       <label className="switch-row">
         <span className="filter-label">Sort by highest-rated professor first</span>
         <input type="checkbox" checked={sortByRating} onChange={(e) => setSortByRating(e.target.checked)} />
       </label>
 
-      {minRating != null && (
+      {minRating != null && minRatingCount === 0 && (
         <label className="switch-row">
           <span className="filter-label">Include instructors with no RMP match</span>
           <input type="checkbox" checked={includeUnrated} onChange={(e) => setIncludeUnrated(e.target.checked)} />
