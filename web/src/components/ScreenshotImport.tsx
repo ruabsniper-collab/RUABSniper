@@ -1,55 +1,13 @@
-import { useRef, useState } from "react";
-import { addScheduleBlock } from "../lib/schedule";
-import { runScheduleOcr, parseScheduleImage, type ScheduleBlockDraft } from "../lib/scheduleOcr";
-import { DAY_LABELS, formatMilitaryTime, parseTimeToMilitary } from "../lib/time";
+import { useEffect, useRef, useState } from "react";
+import { addScheduleBlocks, loadMySchedule } from "../lib/schedule";
+import { runScheduleOcr, parseScheduleImage, parseScheduleText } from "../lib/scheduleOcr";
+import { DAY_LABELS } from "../lib/time";
 import { CAMPUS_PICKER_OPTIONS } from "../lib/campus";
 import { loadImageCanvas, sampleRegionColor } from "../lib/colorSample";
+import { prepareScheduleImage } from "../lib/scheduleImage";
+import { importRowError, prepareScheduleImport, toImportRow, type ScheduleImportRow as DraftRow } from "../lib/scheduleImport";
 
 const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
-
-type DraftRow = {
-  label: string;
-  day: string;
-  startText: string;
-  endText: string;
-  included: boolean;
-  sourceLine: string;
-  dayGuessed: boolean;
-  courseKey?: string;
-  campus?: string;
-};
-
-function toDraftRow(d: ScheduleBlockDraft): DraftRow {
-  return {
-    label: d.label,
-    day: d.day,
-    startText: d.start ? formatMilitaryTime(d.start) : "",
-    endText: d.end ? formatMilitaryTime(d.end) : "",
-    // A day guessed rather than read (see parseScheduleText — this is the
-    // normal case for a WebReg Calendar-view screenshot, where the day is
-    // only ever a column header, never text next to the class) starts
-    // unchecked, so nothing gets added to My Schedule on a possibly-wrong
-    // day just because the reviewer clicked "Add" without reading every row.
-    included: !d.dayGuessed,
-    sourceLine: d.sourceLine,
-    dayGuessed: d.dayGuessed ?? false,
-    courseKey: d.courseKey,
-    campus: d.campus,
-  };
-}
-
-/** Reads a File as a base64 JPEG payload (no "data:" prefix) for runScheduleOcr. */
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Couldn't read that image."));
-    reader.readAsDataURL(file);
-  });
-}
 
 /**
  * "Import from screenshot": pick a photo, OCR it (see lib/scheduleOcr.ts),
@@ -58,16 +16,30 @@ function fileToBase64(file: File): Promise<string> {
  */
 export function ScreenshotImport({ onImported }: { onImported: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanRef = useRef<AbortController | null>(null);
+  const lastFileRef = useRef<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [rawText, setRawText] = useState("");
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [skippedMsg, setSkippedMsg] = useState<string | null>(null);
+  const [foundCount, setFoundCount] = useState(0);
+  useEffect(() => () => scanRef.current?.abort(), []);
+  useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
 
   async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = ""; // allow retrying the very same screenshot
     if (!file) return;
+    lastFileRef.current = file;
+    await scanFile(file);
+  }
+
+  async function scanFile(file: File) {
+    scanRef.current?.abort();
+    const scan = new AbortController();
+    scanRef.current = scan;
 
     setImageUrl(URL.createObjectURL(file));
     setStatus("scanning");
@@ -75,10 +47,12 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
     setSkippedMsg(null);
     setDrafts([]);
     setRawText("");
+    setFoundCount(0);
 
     try {
-      const base64 = await fileToBase64(file);
-      const result = await runScheduleOcr(base64);
+      const base64 = await prepareScheduleImage(file, scan.signal);
+      const result = await runScheduleOcr(base64, scan.signal);
+      if (scan.signal.aborted) return;
       setRawText(result.text);
 
       // Color-based campus detection is a bonus signal, not a required one
@@ -93,10 +67,14 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         sampleColor = undefined;
       }
 
-      setDrafts(parseScheduleImage(result, sampleColor).map(toDraftRow));
+      if (scan.signal.aborted) return;
+      const rows = parseScheduleImage(result, sampleColor).map(toImportRow);
+      setDrafts(rows);
+      setFoundCount(rows.length);
       setStatus("done");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Scan failed");
+      if (scan.signal.aborted) return;
+      setError(err instanceof Error && err.name === "TimeoutError" ? "The screenshot reader took too long. Try again or crop to the schedule grid." : err instanceof Error ? err.message : "Scan failed");
       setStatus("error");
     }
   }
@@ -110,26 +88,16 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
   }
 
   function commitSelected() {
-    const included = drafts.filter((d) => d.included);
-    let added = 0;
-    let skipped = 0;
-    for (const d of included) {
-      const start = parseTimeToMilitary(d.startText);
-      const end = parseTimeToMilitary(d.endText);
-      if (!start || !end || !d.label.trim()) {
-        skipped += 1;
-        continue;
-      }
-      addScheduleBlock({ label: d.label.trim(), day: d.day, start, end, courseKey: d.courseKey, campus: d.campus });
-      added += 1;
+    try {
+      const result = prepareScheduleImport(drafts, loadMySchedule());
+      if (result.blocks.length > 0) addScheduleBlocks(result.blocks);
+      setDrafts(result.remaining);
+      setSkippedMsg(`Added ${result.blocks.length} class blocks.${result.duplicates ? ` ${result.duplicates} already in your schedule.` : ""}${result.invalid ? ` ${result.invalid} need corrections below and were kept for you.` : ""}`);
+      setError(null);
+      if (result.blocks.length > 0) onImported();
+    } catch {
+      setError("Couldn't save the import. Your review rows are still here; free some browser storage and try again.");
     }
-    setSkippedMsg(
-      skipped > 0
-        ? `Added ${added}, skipped ${skipped} (couldn't read a time like "3:50 PM" — fix and retry, or add manually).`
-        : null,
-    );
-    if (added > 0) onImported();
-    setDrafts((prev) => prev.filter((d) => !d.included)); // keep unselected/failed rows to retry
   }
 
   const includedCount = drafts.filter((d) => d.included).length;
@@ -137,8 +105,8 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <p className="hint">
-        Pick a screenshot of your schedule — WebReg, Schedule Planner, a calendar app, even a photo of a
-        printout. Text recognition is best-effort, so review every row below before adding anything.
+        For the best result, use a screenshot cropped to the schedule grid with day headers and full
+        class times visible. Check every day and time before adding the results.
       </p>
 
       {/* No `capture` attribute on purpose — that forces mobile browsers
@@ -165,7 +133,9 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         />
       )}
 
-      {status === "scanning" && <p className="hint">Reading text off the image…</p>}
+      {status === "scanning" && <><p className="hint" role="status">Preparing the image and reading your schedule…</p>
+        <button className="btn btn-secondary" onClick={() => { scanRef.current?.abort(); setStatus("idle"); }}>Cancel scan</button></>}
+      {status !== "scanning" && lastFileRef.current && <button className="btn btn-secondary" onClick={() => { if (lastFileRef.current) void scanFile(lastFileRef.current); }}>Scan again</button>}
       {error && <p className="error-text">{error}</p>}
       {skippedMsg && <p className="warning-box">{skippedMsg}</p>}
 
@@ -179,25 +149,21 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
         </button>
       )}
 
-      {status === "done" && drafts.length === 0 && !error && (
+      {status === "done" && foundCount === 0 && drafts.length === 0 && !error && (
         <div>
           <p className="warning-box">
             Couldn't find any "day + time" patterns in that image. Raw text it read is below — use Manual
             entry if this isn't useful.
           </p>
-          {rawText ? (
-            <pre style={{ maxHeight: 120, overflow: "auto", background: "#f6f8fa", borderRadius: 6, padding: 8, fontSize: 11 }}>
-              {rawText}
-            </pre>
-          ) : null}
         </div>
       )}
 
       {drafts.map((d, i) => (
-        <div key={i} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div key={d.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="row-flex" style={{ alignItems: "center" }}>
             <input
               type="checkbox"
+              aria-label={`Include ${d.label || "class"}`}
               checked={d.included}
               onChange={(e) => updateDraft(i, { included: e.target.checked })}
             />
@@ -205,9 +171,10 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
               className="input"
               style={{ flex: 1, fontWeight: 600 }}
               value={d.label}
+              aria-label="Class name"
               onChange={(e) => updateDraft(i, { label: e.target.value })}
             />
-            <button className="btn-danger btn btn-small" onClick={() => removeDraft(i)}>
+            <button className="btn-danger btn btn-small" aria-label={`Remove ${d.label || "class"}`} onClick={() => removeDraft(i)}>
               ✕
             </button>
           </div>
@@ -216,16 +183,19 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
           </p>
           {d.dayGuessed && (
             <p className="warning-box">
-              Couldn't read a day for this one (common for a WebReg Calendar screenshot, where the day is
-              only shown once as a column header) — defaulted to Monday below. Pick the real day before
-              including it.
+              Couldn't confidently read this class's day. Choose the correct day before including it.
             </p>
           )}
+          {d.timeGuessed && <div className="warning-box">AM/PM was unclear. Check the times below.
+            <button className="btn btn-small" onClick={() => updateDraft(i, { timeGuessed: false })}>These times are correct</button>
+          </div>}
+          {d.included && importRowError(d) && <p className="error-text" role="status">{importRowError(d)}</p>}
           <div className="row-flex">
             {DAYS.map((day) => (
               <button
                 key={day}
                 className={`day-chip ${d.day === day ? "active" : ""}`}
+                aria-pressed={d.day === day && !d.dayGuessed}
                 onClick={() => updateDraft(i, { day, dayGuessed: false })}
               >
                 {DAY_LABELS[day]}
@@ -236,14 +206,16 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
             <input
               className="input"
               placeholder="Start, e.g. 3:50 PM"
+              aria-label="Start time"
               value={d.startText}
-              onChange={(e) => updateDraft(i, { startText: e.target.value })}
+              onChange={(e) => updateDraft(i, { startText: e.target.value, timeGuessed: false })}
             />
             <input
               className="input"
               placeholder="End, e.g. 5:10 PM"
+              aria-label="End time"
               value={d.endText}
-              onChange={(e) => updateDraft(i, { endText: e.target.value })}
+              onChange={(e) => updateDraft(i, { endText: e.target.value, timeGuessed: false })}
             />
           </div>
           <label className="row-flex" style={{ alignItems: "center", gap: 8 }}>
@@ -265,6 +237,14 @@ export function ScreenshotImport({ onImported }: { onImported: () => void }) {
           </label>
         </div>
       ))}
+
+      {rawText && <details><summary>Review or fix the recognized text</summary>
+        <p className="hint">For a corrected list, use one class per line, for example: Biology Mon/Wed 9:00 AM–10:20 AM.</p>
+        <textarea className="input" aria-label="Recognized schedule text" rows={7} value={rawText} onChange={e => setRawText(e.target.value)} />
+        <button className="btn btn-secondary" onClick={() => {
+          const rows = parseScheduleText(rawText).map(toImportRow); setDrafts(rows); setFoundCount(rows.length); setSkippedMsg(null);
+        }}>Rebuild review rows from this text</button>
+      </details>}
 
       {drafts.length > 0 && (
         <button className="btn btn-green" onClick={commitSelected} disabled={includedCount === 0}>

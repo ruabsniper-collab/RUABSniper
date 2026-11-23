@@ -17,6 +17,7 @@ export type ScheduleBlockDraft = {
   end: string | null;
   sourceLine: string; // the OCR'd line this was guessed from, shown for review
   dayGuessed?: boolean; // true when `day` is a placeholder, not read from the image
+  timeGuessed?: boolean;
   courseKey?: string; // "subjectCode:courseNumber" read off a SOC-style course-code line, when one was found -- lets Search recognize "same course, different section" instead of a hard conflict
   campus?: string; // one of campus.ts's canonical CAMPUS_VALUES, when recognizable text was found near the course-code line -- powers the cross-campus travel-time conflict check
 };
@@ -56,21 +57,34 @@ function joinWords(words: OcrSpaceWord[]): string {
   return text;
 }
 
-function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] {
+export function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] {
   const out: PositionedLine[] = [];
   for (const line of lines ?? []) {
-    const words = (line.Words ?? []).filter((w) => w.WordText);
+    const inputWords = (line.Words ?? []).filter((w) => w.WordText);
+    const allDays = inputWords.length > 1 && inputWords.every(w => wholeLineDay(w.WordText ?? ""));
+    // Preserve provider order for overlapping sub-tokens of the same time.
+    const words = allDays ? inputWords.sort((a, b) => (a.Left ?? 0) - (b.Left ?? 0)) : inputWords;
     if (words.length === 0) continue;
-    const lefts = words.map((w) => w.Left ?? 0);
-    const rights = words.map((w) => (w.Left ?? 0) + (w.Width ?? 0));
-    const left = Math.min(...lefts);
-    out.push({
-      text: joinWords(words),
-      left,
-      top: line.MinTop ?? Math.min(...words.map((w) => w.Top ?? 0)),
-      width: Math.max(...rights) - left,
-      height: line.MaxHeight ?? Math.max(...words.map((w) => w.Height ?? 0)),
-    });
+    const groups: OcrSpaceWord[][] = [];
+    for (const word of words) {
+      const group = groups.at(-1);
+      const previous = group?.at(-1);
+      const gap = Math.max(24, (line.MaxHeight ?? word.Height ?? 12) * 2);
+      if (!previous || allDays || (word.Left ?? 0) - ((previous.Left ?? 0) + (previous.Width ?? 0)) > gap ||
+          (previous.Left ?? 0) - (word.Left ?? 0) > gap) groups.push([word]);
+      else group!.push(word);
+    }
+    for (const group of groups) {
+      const lefts = group.map((w) => w.Left ?? 0);
+      const rights = group.map((w) => (w.Left ?? 0) + (w.Width ?? 0));
+      const left = Math.min(...lefts);
+      out.push({
+        text: joinWords(group), left,
+        top: Math.min(...group.map((w) => w.Top ?? line.MinTop ?? 0)),
+        width: Math.max(...rights) - left,
+        height: line.MaxHeight ?? Math.max(...group.map((w) => w.Height ?? 0)),
+      });
+    }
   }
   return out;
 }
@@ -86,13 +100,10 @@ function toPositionedLines(lines: OcrSpaceLine[] | undefined): PositionedLine[] 
  * entirely client-side; nothing about this call touches Supabase or the
  * backend.
  */
-export async function runScheduleOcr(base64Jpeg: string): Promise<OcrResult> {
+export async function runScheduleOcr(base64Jpeg: string, signal?: AbortSignal): Promise<OcrResult> {
   const apiKey = import.meta.env.VITE_OCR_SPACE_API_KEY;
   if (!apiKey) {
-    throw new Error(
-      "Missing VITE_OCR_SPACE_API_KEY. Get a free key at https://ocr.space/ocrapi/freekey " +
-        "and add it to web/.env (see web/.env.example).",
-    );
+    throw new Error("The screenshot reader isn't available right now. You can still add classes manually.");
   }
 
   const form = new FormData();
@@ -104,13 +115,20 @@ export async function runScheduleOcr(base64Jpeg: string): Promise<OcrResult> {
   form.append("isOverlayRequired", "true"); // word positions -- see toPositionedLines()
   form.append("base64Image", `data:image/jpeg;base64,${base64Jpeg}`);
 
-  const res = await fetch(OCR_ENDPOINT, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`OCR.space request failed: ${res.status} ${res.statusText}`);
+  const timeout = AbortSignal.timeout(45_000);
+  let res: Response;
+  try {
+    res = await fetch(OCR_ENDPOINT, { method: "POST", body: form, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "TimeoutError")) throw error;
+    throw new Error("Couldn't reach the screenshot reader. Check your connection and try again.");
+  }
+  if (!res.ok) throw new Error(res.status === 429 ? "The screenshot reader is busy. Wait a moment and try again." : "The screenshot reader couldn't finish this request. Try again in a moment.");
 
   const json = (await res.json()) as {
     IsErroredOnProcessing?: boolean;
     ErrorMessage?: string | string[];
-    ParsedResults?: { ParsedText?: string; TextOverlay?: { Lines?: OcrSpaceLine[] } }[];
+    ParsedResults?: { ParsedText?: string; FileParseExitCode?: number | string; ErrorMessage?: string; TextOverlay?: { Lines?: OcrSpaceLine[] } }[];
   };
 
   if (json.IsErroredOnProcessing) {
@@ -119,6 +137,8 @@ export async function runScheduleOcr(base64Jpeg: string): Promise<OcrResult> {
   }
 
   const results = json.ParsedResults ?? [];
+  if (results.length === 0 || results.every(r => r.FileParseExitCode != null && Number(r.FileParseExitCode) !== 1))
+    throw new Error("The screenshot reader couldn't read this image. Crop to the schedule grid and try again.");
   return {
     text: results.map((r) => r.ParsedText ?? "").join("\n"),
     lines: results.flatMap((r) => toPositionedLines(r.TextOverlay?.Lines)),
@@ -139,7 +159,7 @@ const DAY_NAMES: [string, string][] = (
     ["friday", "F"], ["fri", "F"],
     ["saturday", "S"], ["sat", "S"],
     ["sunday", "U"], ["sun", "U"], ["su", "U"],
-    ["m", "M"], ["t", "T"], ["w", "W"], ["f", "F"],
+    ["m", "M"], ["t", "T"], ["w", "W"], ["f", "F"], ["h", "H"], ["r", "H"], ["s", "S"], ["u", "U"],
   ] as [string, string][]
 ).sort((a, b) => b[0].length - a[0].length);
 
@@ -167,11 +187,11 @@ function expandDayRun(run: string): string[] {
   return [...new Set(days)];
 }
 
-/** True only if the *entire* line is one day name/abbreviation — a calendar grid's column header, not prose mentioning a day. */
+/** True only if the entire line is a day name/abbreviation, including single-letter headers. */
 function wholeLineDay(text: string): string | null {
   const cleaned = text.trim().toLowerCase().replace(/[^a-z]/g, "");
   if (!cleaned || cleaned.length > 9) return null; // longer than "wednesday" can't be a bare day name
-  const hit = DAY_NAMES.find(([name]) => name === cleaned && name.length > 1); // single letters are too ambiguous as a whole-line match
+  const hit = DAY_NAMES.find(([name]) => name === cleaned);
   return hit ? hit[1] : null;
 }
 
@@ -179,7 +199,7 @@ function wholeLineDay(text: string): string | null {
 
 /** Looser than time.ts's parseTimeToMilitary -- tolerates OCR noise like "3-4:15pm", "930am", "3.50 PM". */
 function parseLooseTime(raw: string, inheritPeriod?: "AM" | "PM"): string | null {
-  const cleaned = raw.trim().replace(/\./g, "").toUpperCase();
+  const cleaned = raw.trim().replace(/\s/g, "").replace(/\.(?=\d)/g, ":").replace(/\./g, "").toUpperCase();
   const m = cleaned.match(/^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$/);
   if (!m) return null;
   let hours = Number(m[1]);
@@ -196,14 +216,40 @@ function parseLooseTime(raw: string, inheritPeriod?: "AM" | "PM"): string | null
   return `${String(hours).padStart(2, "0")}${String(minutes).padStart(2, "0")}`;
 }
 
-const TIME_RANGE_RE =
-  /(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\s*(?:-|–|—|to)\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))/;
+const TIME_TOKEN = String.raw`\d{1,2}(?:\s*[:.]\s*\d{2}|\d{2})?\s*(?:[ap]\s*\.?\s*m\.?)?`;
+const TIME_RANGE_RE = new RegExp(`(?<![\\d:])(${TIME_TOKEN})\\s*(?:-|–|—|to)\\s*(${TIME_TOKEN})(?![\\d:])`, "i");
 
-function parseTimeRange(m: RegExpMatchArray): { start: string | null; end: string | null } {
+function parseTimeRange(m: RegExpMatchArray): { start: string | null; end: string | null; timeGuessed: boolean } {
+  const startRaw = m[1];
   const endRaw = m[2];
-  const endPeriodMatch = endRaw.toUpperCase().match(/AM|PM/);
-  const endPeriod = endPeriodMatch ? (endPeriodMatch[0] as "AM" | "PM") : undefined;
-  return { start: parseLooseTime(m[1], endPeriod), end: parseLooseTime(endRaw, endPeriod) };
+  const period = (raw: string) => raw.replace(/[\s.]/g, "").toUpperCase().match(/AM|PM/)?.[0] as "AM" | "PM" | undefined;
+  const startPeriod = period(startRaw), endPeriod = period(endRaw);
+  let start = parseLooseTime(startRaw, endPeriod), end = parseLooseTime(endRaw, startPeriod);
+  // 11-12:20 PM crosses noon; inheriting PM blindly turns 11 into 11 PM.
+  if (start && end && start >= end && (startPeriod || endPeriod)) {
+    if (!startPeriod && Number(start.slice(0, 2)) >= 12) start = String(Number(start) - 1200).padStart(4, "0");
+    else if (!endPeriod && Number(end.slice(0, 2)) < 12) end = String(Number(end) + 1200).padStart(4, "0");
+  }
+  const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(2));
+  const timeGuessed = (!startPeriod && !endPeriod && !/^0\d/.test(startRaw.trim()) && Number(start?.slice(0, 2)) < 13 && Number(end?.slice(0, 2)) < 13) ||
+    (Boolean(startPeriod) !== Boolean(endPeriod) && Boolean(start && end && minutes(end) - minutes(start) > 360));
+  if (!start || !end || start >= end) return { start: null, end: null, timeGuessed: true };
+  return { start, end, timeGuessed };
+}
+
+function timeRange(text: string): RegExpMatchArray | null {
+  const match = text.match(TIME_RANGE_RE);
+  // Do not turn dates, course-code fragments, or plain numbers into times.
+  return match && (/[ap]\s*\.?\s*m/i.test(match[0]) || /\d\s*[:.]\s*\d{2}/.test(match[0])) ? match : null;
+}
+
+function uniqueDrafts(drafts: ScheduleBlockDraft[]): ScheduleBlockDraft[] {
+  const seen = new Set<string>();
+  return drafts.filter(draft => {
+    const key = [draft.day, draft.start, draft.end, draft.courseKey, draft.label.toLowerCase()].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
 }
 
 // ---- Simple-list parsing (no position data) ----------------------------------
@@ -222,16 +268,24 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const timeMatch = line.match(TIME_RANGE_RE);
+    const timeMatch = timeRange(line);
     if (!timeMatch || timeMatch.index == null) continue;
-    const { start, end } = parseTimeRange(timeMatch);
+    const { start, end, timeGuessed } = parseTimeRange(timeMatch);
 
     const before = line.slice(0, timeMatch.index);
     const dayRuns = [...before.matchAll(DAY_RUN_RE)];
+    if (dayRuns.length === 0) {
+      const afterDays = [...line.slice(timeMatch.index + timeMatch[0].length).matchAll(DAY_RUN_RE)];
+      if (afterDays.length > 0) {
+        const label = before.trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
+        for (const day of expandDayRun(afterDays[0][0])) drafts.push({ label, day, start, end, sourceLine: line, timeGuessed });
+        continue;
+      }
+    }
 
     if (dayRuns.length === 0) {
       const label = before.trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
-      drafts.push({ label, day: "M", start, end, sourceLine: line, dayGuessed: true });
+      drafts.push({ label, day: "M", start, end, sourceLine: line, dayGuessed: true, timeGuessed });
       continue;
     }
 
@@ -242,11 +296,11 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
     const label = before.slice(0, dayMatch.index).trim().replace(/[:\-–—]+$/, "").trim() || "Imported class";
 
     for (const day of days) {
-      drafts.push({ label, day, start, end, sourceLine: line });
+      drafts.push({ label, day, start, end, sourceLine: line, timeGuessed });
     }
   }
 
-  return drafts;
+  return uniqueDrafts(drafts);
 }
 
 // ---- Calendar-grid parsing (uses OCR word positions) -------------------------
@@ -258,7 +312,7 @@ export function parseScheduleText(text: string): ScheduleBlockDraft[] {
 // own courses table keys on -- capturing them lets a schedule block imported
 // this way be recognized as "the same course" as a section found in Search,
 // not just matched on time (see courseKey on ScheduleBlockDraft).
-const COURSE_CODE_RE = /^\d{2}:(\d{3}):(\d{3})/;
+const COURSE_CODE_RE = /^\d{2}\s*:\s*(\d{3})\s*:\s*(\d{3})/;
 // "(4.0)" credits, printed right after the code line.
 const CREDITS_RE = /^\(\d/;
 
@@ -290,7 +344,8 @@ export function parseScheduleImage(
   result: OcrResult,
   sampleColor?: (left: number, top: number, width: number, height: number) => RGB | null,
 ): ScheduleBlockDraft[] {
-  const { lines, text } = result;
+  const { text } = result;
+  const lines = [...result.lines].sort((a, b) => a.top - b.top || a.left - b.left);
 
   const dayLines = lines
     .map((line) => ({ line, day: wholeLineDay(line.text) }))
@@ -301,11 +356,10 @@ export function parseScheduleImage(
   // The header row is the tightest cluster of day-name lines near the top —
   // there's exactly one occurrence of each day name as a header, at nearly
   // identical Top values, well above any within-cell text.
-  const minTop = Math.min(...dayLines.map((d) => d.line.top));
-  const tolerance = Math.max(20, ...dayLines.map((d) => d.line.height)); // scale with the image's actual font size
-  const headerRow = dayLines
-    .filter((d) => d.line.top <= minTop + tolerance)
-    .map((d) => ({ day: d.day, centerX: d.line.left + d.line.width / 2 }));
+  const clusters = dayLines.map(anchor => dayLines.filter(d => Math.abs(d.line.top - anchor.line.top) <= Math.max(12, anchor.line.height)));
+  const headerLines = clusters.sort((a, b) => new Set(b.map(d => d.day)).size - new Set(a.map(d => d.day)).size)[0];
+  const minTop = Math.min(...headerLines.map(d => d.line.top));
+  const headerRow = [...new Map(headerLines.map(d => [d.day, { day: d.day, centerX: d.line.left + d.line.width / 2 }])).values()].sort((a, b) => a.centerX - b.centerX);
   if (headerRow.length < 2) return parseScheduleText(text);
 
   // Campus color legend, built once from whatever campus-name chips sit
@@ -334,27 +388,23 @@ export function parseScheduleImage(
   const drafts: ScheduleBlockDraft[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const timeMatch = line.text.match(TIME_RANGE_RE);
+    if (line.top <= minTop + Math.max(...headerLines.map(d => d.line.height))) continue;
+    const timeMatch = timeRange(line.text);
     if (!timeMatch) continue;
 
-    const { start, end } = parseTimeRange(timeMatch);
+    const { start, end, timeGuessed } = parseTimeRange(timeMatch);
     const day = nearestColumn(line.left + line.width / 2);
-    const blockCenterX = line.left + line.width / 2;
-
-    // Reconstruct the title from the lines right after the time, same
-    // column (within half the header's own column width, generous enough
-    // for text that's narrower or wider than the time line itself), up
-    // until the course-code line, a credits line, the next time range, or
-    // 3 lines out -- whichever comes first.
-    const columnWidth =
-      headerRow.length > 1
-        ? Math.abs(headerRow[1].centerX - headerRow[0].centerX)
-        : line.width * 2;
+    const column = headerRow.find(col => col.day === day)!;
+    const spacing = Math.min(...headerRow.filter(col => col.day !== day).map(col => Math.abs(col.centerX - column.centerX)));
+    const dayGuessed = Math.abs(line.left + line.width / 2 - column.centerX) > spacing * 0.4;
+    // Read nearby lines in this day column, stopping at the next meeting.
+    // Continue past wrapped title lines so the course identity isn't lost.
     const titleParts: string[] = [];
     let courseKey: string | undefined;
     let codeLineIndex: number | null = null;
-    for (let j = i + 1; j < lines.length && titleParts.length < 3; j++) {
+    for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j];
+      if (next.top - line.top > Math.max(120, line.height * 12)) break;
       // Same-row neighboring columns interleave in OCR's overall line order
       // (e.g. Tue/Thu/Fri classes that all happen to start at 12:10 PM emit
       // their lines back to back) -- a course-code/credits/time line from a
@@ -363,10 +413,10 @@ export function parseScheduleImage(
       // Checked first, before any of the stop patterns below, for exactly
       // that reason: verified live, this was silently producing "Imported
       // class" for a real class whose title just wasn't the very next line.
-      const sameColumn = Math.abs(next.left + next.width / 2 - blockCenterX) < columnWidth / 2;
+      const sameColumn = nearestColumn(next.left + next.width / 2) === day;
       if (!sameColumn) continue;
       const trimmed = next.text.trim();
-      if (TIME_RANGE_RE.test(next.text)) break; // this column's own next class -- stop
+      if (timeRange(next.text)) break; // this column's own next class -- stop
       const codeMatch = trimmed.match(COURSE_CODE_RE);
       if (codeMatch) {
         courseKey = `${codeMatch[1]}:${codeMatch[2]}`;
@@ -374,7 +424,7 @@ export function parseScheduleImage(
         break;
       }
       if (CREDITS_RE.test(trimmed)) break; // this column's own credits line -- stop
-      titleParts.push(trimmed);
+      if (titleParts.length < 3) titleParts.push(trimmed);
     }
 
     // Campus/room text (e.g. "(3.0) SC-203 College Avenue") sits on or right
@@ -386,11 +436,12 @@ export function parseScheduleImage(
     // existed.
     let campus: string | undefined;
     if (codeLineIndex != null) {
-      for (let j = codeLineIndex; j < lines.length && j < codeLineIndex + 3; j++) {
+      for (let j = codeLineIndex; j < lines.length; j++) {
         const next = lines[j];
-        if (j !== codeLineIndex && TIME_RANGE_RE.test(next.text)) break;
-        const sameColumn = Math.abs(next.left + next.width / 2 - blockCenterX) < columnWidth / 2;
+        if (next.top - lines[codeLineIndex].top > Math.max(50, line.height * 4)) break;
+        const sameColumn = nearestColumn(next.left + next.width / 2) === day;
         if (!sameColumn) continue;
+        if (j !== codeLineIndex && timeRange(next.text)) break;
         const found = normalizeCampusName(next.text);
         if (found) {
           campus = found;
@@ -415,9 +466,11 @@ export function parseScheduleImage(
       courseKey,
       campus,
       end,
+      timeGuessed,
+      dayGuessed,
       sourceLine: line.text,
     });
   }
 
-  return drafts;
+  return uniqueDrafts(drafts);
 }

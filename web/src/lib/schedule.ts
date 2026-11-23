@@ -166,14 +166,18 @@ export function restoreSchedules(sets: ScheduleSet[], activeId: string): void {
 }
 
 export function addScheduleBlock(block: Omit<ScheduleBlock, "id">): ScheduleBlock[] {
+  return addScheduleBlocks([block]);
+}
+
+export function addScheduleBlocks(blocks: Omit<ScheduleBlock, "id">[]): ScheduleBlock[] {
   const sets = listSchedules();
   const activeId = getActiveScheduleId();
-  const nextBlock = { ...block, id: randomUUID() };
+  const nextBlocks = blocks.map(block => ({ ...block, id: randomUUID() }));
   let updated: ScheduleBlock[] = [];
   writeSets(
     sets.map((s) => {
       if (s.id !== activeId) return s;
-      updated = [...s.blocks, nextBlock];
+      updated = [...s.blocks, ...nextBlocks];
       return { ...s, blocks: updated };
     }),
   );
