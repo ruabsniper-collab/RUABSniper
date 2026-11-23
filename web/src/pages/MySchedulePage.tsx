@@ -256,7 +256,7 @@ export function MySchedulePage() {
           </button>
         </div>
       ) : (
-        <ScreenshotImport onImported={refresh} />
+        <ScreenshotImport key={activeId} onImported={refresh} />
       )}
     </div>
   );
