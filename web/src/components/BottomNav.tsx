@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { SearchIcon, TargetIcon, CalendarIcon, SettingsIcon } from "./icons";
 import { subscribeOpenSnipeCount } from "../lib/watchStatus";
 
@@ -15,6 +15,7 @@ const TABS = [
 ];
 
 export function BottomNav() {
+  const { pathname } = useLocation();
   // Published by WatchesPage, which polls continuously once mounted
   // regardless of which tab is active -- see its own comment -- so this
   // dot stays live even while you're sitting on a different tab.
@@ -24,7 +25,14 @@ export function BottomNav() {
   return (
     <nav className="bottom-nav">
       {TABS.map(({ to, end, label, Icon }) => (
-        <NavLink key={to} to={to} end={end}>
+        <NavLink key={to} to={to} end={end} onClick={(event) => {
+          if (pathname !== to || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          document.querySelector<HTMLElement>(".app-main")?.scrollTo({
+            top: 0,
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+          });
+        }}>
           <span className="nav-icon">
             <Icon />
             {to === "/watches" && openSnipeCount > 0 && <span className="nav-badge" />}

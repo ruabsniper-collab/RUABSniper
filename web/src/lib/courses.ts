@@ -5,6 +5,7 @@ import { checkConflict, type ScheduleBlock } from "./schedule";
 import { militaryToMinutes } from "./time";
 import { listWatches } from "./watches";
 import { getAvailability, verifyAvailability } from "./availability";
+import { courseSearchFilter, matchesCourseSearch, matchesProfessorFilters, type SearchScope } from "./courseSearch";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
 const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at,section_listings:raw->section_listings";
@@ -42,7 +43,9 @@ export const CREDITS_OPTIONS: number[] = [0, 1, 1.5, 2, 2.5, 3, 4, 6];
 export type SearchFilters = {
   term: Term;
   query?: string; // free text: title, subject name, subject/course number, or a core code
+  searchScope?: SearchScope;
   minRating?: number; // 0-5, only applied to sections with a confident RMP match
+  minRatingCount?: number;
   includeUnratedWhenFiltering?: boolean; // if minRating is set, whether "no confident match" still passes
   requireRmpMatch?: boolean; // drop any section whose professor has no confident RMP match at all
   sortByRating?: boolean; // highest-rated professor first; unrated/no-match sections sink to the bottom
@@ -136,7 +139,8 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
 
   let sections: SectionWithCourse[];
 
-  if (q && /^\d{4,6}$/.test(q)) {
+  const scope = filters.searchScope ?? "all";
+  if (scope === "all" && q && /^\d{4,6}$/.test(q)) {
     // Looks like an index number (real ones run 4-6 digits -- e.g. 17843,
     // 21069) rather than a 1-3 digit subject/course number below. Index
     // numbers live on *sections*, not courses, so the courses-table query
@@ -165,19 +169,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
     }
 
     if (q) {
-      if (/^[A-Z]{2,6}$/i.test(q)) {
-        // Looks like a core code (e.g. "WCr", "QQ", "HST") — match core codes
-        // OR fall through to a normal text search too, since a short code
-        // could also just be someone typing a subject abbreviation.
-        courseQuery = courseQuery.or(
-          `core_codes.cs.{${q.toUpperCase()}},title.ilike.%${q}%,subject_description.ilike.%${q}%,raw->>listing_titles.ilike.%${q}%`,
-        );
-      } else if (/^\d{1,3}$/.test(q)) {
-        // Looks like a subject or course number.
-        courseQuery = courseQuery.or(`subject_code.eq.${q.padStart(3, "0")},course_number.eq.${q}`);
-      } else {
-        courseQuery = courseQuery.or(`title.ilike.%${q}%,subject_description.ilike.%${q}%,raw->>listing_titles.ilike.%${q}%`);
-      }
+      courseQuery = courseQuery.or(courseSearchFilter(q, scope));
     }
 
     const { data, error } = await courseQuery.limit(200).abortSignal(signal);
@@ -188,14 +180,8 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
   }
 
   if (filters.credits != null) sections = sections.filter((section) => section.courses.credits === filters.credits);
-  if (q && !/^[0-9]{1,6}$/.test(q)) {
-    const text = q.toLowerCase();
-    sections = sections.filter(({ courses }) =>
-      courses.title.toLowerCase().includes(text) ||
-      courses.subject_description?.toLowerCase().includes(text) ||
-      courses.core_codes.some((code) => code.toLowerCase() === text),
-    );
-  }
+  if (q && !(scope === "all" && /^\d{4,6}$/.test(q)))
+    sections = sections.filter(({ courses }) => matchesCourseSearch(courses, q, scope));
 
   if (filters.locations && filters.locations.length > 0) {
     sections = sections.filter((s) => matchesLocation(s, filters.locations!));
@@ -243,16 +229,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
   const hasConfidentMatch = (s: SectionWithCourse) =>
     Boolean(s.professorRating && s.professorRating.confidence >= MIN_CONFIDENT_MATCH);
 
-  if (filters.requireRmpMatch) {
-    sections = sections.filter(hasConfidentMatch);
-  }
-
-  if (filters.minRating != null) {
-    sections = sections.filter((s) => {
-      if (!hasConfidentMatch(s)) return Boolean(filters.includeUnratedWhenFiltering);
-      return (s.professorRating!.avg_rating ?? 0) >= filters.minRating!;
-    });
-  }
+  sections = sections.filter(section => matchesProfessorFilters(section, filters));
 
   if (filters.sortByRating) {
     // Stable sort: highest rating first, unrated/no-match sections keep
