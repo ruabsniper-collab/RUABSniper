@@ -36,7 +36,7 @@ export function CourseFilters({ query, onQueryChange, value: v, onChange, option
     <div className="discovery-toolbar">
       <div className="search-field discovery-search">
         <span className="discovery-search-icon" aria-hidden="true"><SearchIcon /></span>
-        <input className="input search-input" aria-label="Search courses" placeholder="Course name, code, or index" value={query} onChange={e => onQueryChange(e.target.value)} spellCheck={false} />
+        <input className="input search-input" aria-label="Search courses" placeholder="Search courses" value={query} onChange={e => onQueryChange(e.target.value)} spellCheck={false} />
         {query && <button className="search-clear" aria-label="Clear search" onClick={() => onQueryChange("")}>×</button>}
       </div>
       <button className={`discovery-filter-toggle ${expanded ? "is-open" : ""}`} aria-expanded={expanded} aria-controls="course-filter-panel" onClick={() => setExpanded(open => !open)}>
@@ -65,16 +65,16 @@ export function CourseFilters({ query, onQueryChange, value: v, onChange, option
     </section>
 
     {expanded && <section className="course-filter-panel" id="course-filter-panel" aria-label="Course filters">
-      <div className="filter-panel-heading"><div><h2>Make it your schedule</h2><p>Changes apply as you choose.</p></div><button className="filter-reset" disabled={count === 0} onClick={reset}>Reset all</button></div>
+      <div className="filter-panel-heading"><div><h2>Filter courses</h2><p>Changes apply as you choose.</p></div><button className="filter-reset" disabled={count === 0} onClick={reset}>Reset all</button></div>
       <fieldset className="filter-section"><legend>Professors & credits</legend>
         <div className="filter-control-grid">
-          <label><span>Minimum rating</span><select className="input" value={v.minRating ?? ""} onChange={e => onChange({ minRating: e.target.value ? Number(e.target.value) : null })}>
+          <label><span>Minimum rating</span><select className="input" aria-label="Minimum rating" value={v.minRating ?? ""} onChange={e => onChange({ minRating: e.target.value ? Number(e.target.value) : null })}>
             <option value="">Any rating</option>{[3, 3.5, 4, 4.5].map(r => <option key={r} value={r}>{r}+ stars</option>)}</select></label>
-          <label><span>Number of ratings</span><select className="input" value={v.minRatingCount} onChange={e => onChange({ minRatingCount: Number(e.target.value) })}>
+          <label><span>Number of ratings</span><select className="input" aria-label="Number of ratings" value={v.minRatingCount} onChange={e => onChange({ minRatingCount: Number(e.target.value) })}>
             <option value={0}>Any count</option>{[5, 10, 20, 50].map(n => <option key={n} value={n}>{n}+ ratings</option>)}</select></label>
-          <label><span>Credits</span><select className="input" value={v.creditsFilter ?? ""} onChange={e => onChange({ creditsFilter: e.target.value === "" ? null : Number(e.target.value) })}>
-            <option value="">Any credits</option>{CREDITS_OPTIONS.map(n => <option key={n} value={n}>{n} credits</option>)}</select></label>
-          <label><span>Sort results</span><select className="input" value={v.sortByRating ? "rating" : "default"} onChange={e => onChange({ sortByRating: e.target.value === "rating" })}>
+          <label><span>Credits</span><select className="input" aria-label="Credits" value={v.creditsFilter ?? ""} onChange={e => onChange({ creditsFilter: e.target.value === "" ? null : Number(e.target.value) })}>
+            <option value="">Any credits</option>{CREDITS_OPTIONS.map(n => <option key={n} value={n}>{n} credit{n === 1 ? "" : "s"}</option>)}</select></label>
+          <label><span>Sort results</span><select className="input" aria-label="Sort results" value={v.sortByRating ? "rating" : "default"} onChange={e => onChange({ sortByRating: e.target.value === "rating" })}>
             <option value="default">Course order</option><option value="rating">Highest rating</option></select></label>
         </div>
         {v.minRatingCount > 0 && <p className="filter-footnote">Every listed instructor needs {v.minRatingCount}+ ratings. Unknown counts are excluded.</p>}
@@ -99,8 +99,8 @@ export function CourseFilters({ query, onQueryChange, value: v, onChange, option
       <fieldset className="filter-section"><legend>Your schedule</legend>
         <label className="filter-switch"><span>Hide schedule conflicts<small>{scheduleName || "My Schedule"} · {scheduleBlocks} blocks</small></span><input type="checkbox" checked={v.hideConflicts} onChange={e => onChange({ hideConflicts: e.target.checked })} /></label>
         {v.hideConflicts && <div className="filter-control-grid">
-          {schedules.length > 1 && <label><span>Check against</span><select className="input" value={activeScheduleId} onChange={e => onScheduleChange(e.target.value)}>{schedules.map(schedule => <option key={schedule.id} value={schedule.id}>{schedule.name}</option>)}</select></label>}
-          <label><span>Cross-campus travel</span><select className="input" value={v.travelBuffer} onChange={e => onChange({ travelBuffer: Number(e.target.value) })}>
+          {schedules.length > 1 && <label><span>Check against</span><select className="input" aria-label="Schedule to check" value={activeScheduleId} onChange={e => onScheduleChange(e.target.value)}>{schedules.map(schedule => <option key={schedule.id} value={schedule.id}>{schedule.name}</option>)}</select></label>}
+          <label><span>Cross-campus travel</span><select className="input" aria-label="Cross-campus travel" value={v.travelBuffer} onChange={e => onChange({ travelBuffer: Number(e.target.value) })}>
             <option value={0}>No buffer</option>{[15, 30, 45, 60].map(n => <option key={n} value={n}>{n} minutes</option>)}</select></label>
         </div>}
       </fieldset>
