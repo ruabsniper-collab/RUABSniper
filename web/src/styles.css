@@ -414,6 +414,65 @@ h3 {
   min-height: 44px;
 }
 
+/* Course discovery keeps direct catalog choices visible, with the detailed
+   filters grouped in one quiet panel instead of a wall of controls. */
+.course-discovery { margin-top: 14px; }
+.discovery-toolbar { display: flex; align-items: stretch; gap: 10px; }
+.discovery-search { flex: 1; min-width: 0; }
+.discovery-search .search-input { padding-left: 43px; box-shadow: none; min-height: 50px; }
+.discovery-search-icon { position: absolute; left: 14px; top: 15px; width: 19px; height: 19px; color: var(--muted); pointer-events: none; }
+.discovery-filter-toggle { display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 14px; padding: 0 14px; background: var(--card-bg); color: var(--text); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.discovery-filter-toggle > span:first-child { width: 19px; height: 19px; }
+.discovery-filter-toggle b { display: grid; place-items: center; min-width: 20px; height: 20px; padding-inline: 4px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast); font-size: 11px; }
+.discovery-filter-toggle.is-open { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.catalog-pickers { margin-top: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 22px; background: var(--glass-fill); box-shadow: var(--shadow-card); }
+.subject-picker { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.subject-picker > span, .core-picker legend { font-size: 13px; font-weight: 650; }
+.subject-picker .input { min-width: 0; min-height: 44px; background: var(--card-bg); font-size: 14px; }
+.core-picker { min-width: 0; border: 0; padding: 0; margin: 18px 0 0; }
+.core-picker legend { width: 100%; margin-bottom: 12px; padding: 0; }
+.core-picker legend span { float: right; font-size: 11px; font-weight: 400; color: var(--muted); }
+.core-code-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); gap: 7px; }
+.core-code { min-height: 42px; padding: 7px 5px; border: 1px solid var(--border); border-radius: 11px; background: var(--card-bg); color: var(--text); font-family: var(--font-display); font-size: 13px; font-weight: 600; cursor: pointer; }
+.core-code.selected { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 20%, transparent); }
+.core-code-long { font-size: 11px; }
+.core-selection-note { display: flex; align-items: start; gap: 10px; margin-top: 12px; }
+.core-selection-note p { flex: 1; margin: 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.core-selection-note button, .filter-reset, .catalog-options-error button { border: 0; padding: 3px 0; flex-shrink: 0; background: none; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.core-loading, .catalog-options-error { padding: 14px 0; font-size: 12px; color: var(--muted); }
+.course-filter-panel { margin-top: 14px; border: 1px solid var(--border); border-radius: 22px; background: var(--card-bg); padding: 20px; box-shadow: var(--shadow-card); }
+.filter-panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.filter-panel-heading h2 { margin: 0; font-family: var(--font-display); font-size: 18px; letter-spacing: -0.025em; }
+.filter-panel-heading p { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
+.filter-reset:disabled { color: var(--muted); opacity: 0.5; cursor: default; }
+.filter-section { min-width: 0; margin: 24px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); }
+.filter-section legend { padding: 0 12px 0 0; font-size: 12px; font-weight: 700; color: var(--text); }
+.filter-control-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
+.filter-control-grid label { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.filter-control-grid label > span, .filter-field-label { font-size: 11px; color: var(--muted); font-weight: 500; }
+.filter-control-grid .input { min-width: 0; min-height: 46px; border-radius: 11px; font-size: 14px; }
+.filter-field-label { margin: 0 0 9px; }
+.filter-choice-wrap { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+.filter-choice { border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; min-height: 38px; background: var(--bg); color: var(--text); font-size: 12px; cursor: pointer; }
+.filter-choice.selected, .filter-days button.selected { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+.filter-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.filter-days button { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); padding: 10px 0; min-height: 40px; font-size: 11px; cursor: pointer; }
+.filter-time-controls { margin-top: 18px; }
+.filter-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: 12px; font-size: 12px; }
+.filter-switch small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.filter-switch input { flex: 0 0 auto; width: 19px; height: 19px; accent-color: var(--accent); }
+.filter-footnote { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 12px 0 0; }
+.filter-done { width: 100%; margin-top: 20px; min-height: 46px; border-radius: 13px; }
+.filter-summary { display: flex; align-items: start; gap: 12px; padding: 12px 3px 0; }
+.filter-summary p { flex: 1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+@media (max-width: 380px) {
+  .catalog-pickers, .course-filter-panel { padding: 14px; }
+  .discovery-toolbar { gap: 7px; }
+  .discovery-filter-toggle { padding-inline: 10px; }
+  .subject-picker { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .core-code-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
 .input:focus-visible,
 .section-row:focus-visible,
 .bottom-nav a:focus-visible,

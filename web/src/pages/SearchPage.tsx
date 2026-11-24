@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSeatRefresh } from "../lib/useSeatRefresh";
 import { useLocation, useNavigate } from "react-router-dom";
-import { browseOpenSections, searchCourses, CREDITS_OPTIONS, LOCATION_OPTIONS } from "../lib/courses";
+import { browseOpenSections, searchCourses } from "../lib/courses";
 import { guessCurrentTerm, loadTermPreference, saveTermPreference, termKey, termLabel, termOptions, type Term } from "../lib/term";
 import { addWatch, listWatches, removeWatch } from "../lib/watches";
 import {
@@ -12,8 +12,8 @@ import {
   type ScheduleSet,
 } from "../lib/schedule";
 import { maybePromptAfterAddingWatch } from "../lib/push";
-import { DAY_LABELS, parseTimeToMilitary } from "../lib/time";
-import { SectionRow, creditsLabel } from "../components/SectionRow";
+import { parseTimeToMilitary } from "../lib/time";
+import { SectionRow } from "../components/SectionRow";
 import { NotificationPrompt } from "../components/NotificationPrompt";
 import { EmptyState } from "../components/EmptyState";
 import { PullToRefreshIndicator } from "../components/PullToRefreshIndicator";
@@ -21,13 +21,13 @@ import { haptic } from "../lib/haptics";
 import { showToast } from "../lib/toast";
 import { usePullToRefresh } from "../lib/usePullToRefresh";
 import type { SectionWithCourse } from "../types/db";
-import type { SearchScope } from "../lib/courseSearch";
+import { CourseFilters, DEFAULT_COURSE_FILTERS, activeFilterCount, type CourseFilterValues } from "../components/CourseFilters";
+import { getCatalogOptions, type CatalogOptions } from "../lib/catalogOptions";
 
 function sectionLabel(section: SectionWithCourse): string {
   return `${section.courses.subject_code}:${section.courses.course_number} sec ${section.section_number}`;
 }
 
-const DAYS = ["M", "T", "W", "H", "F", "S", "U"];
 const TERM_OPTIONS = termOptions();
 const SECTION_BATCH_SIZE = 40;
 
@@ -43,20 +43,23 @@ export function SearchPage() {
   // (if it's still current) before guessing fresh.
   const [term, setTerm] = useState<Term>(() => loadTermPreference() ?? guessCurrentTerm());
   const [query, setQuery] = useState("");
-  const [searchScope, setSearchScope] = useState<SearchScope>("all");
-  const [minRating, setMinRating] = useState<number | null>(null);
-  const [minRatingCount, setMinRatingCount] = useState(0);
-  const [creditsFilter, setCreditsFilter] = useState<number | null>(null);
-  const [includeUnrated, setIncludeUnrated] = useState(true);
-  const [requireRmpMatch, setRequireRmpMatch] = useState(false);
-  const [sortByRating, setSortByRating] = useState(false);
-  const [locations, setLocations] = useState<Set<string>>(new Set());
-  const [filterDays, setFilterDays] = useState<Set<string>>(new Set());
-  const [earliestStartText, setEarliestStartText] = useState("");
-  const [latestEndText, setLatestEndText] = useState("");
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const [hideConflicts, setHideConflicts] = useState(false);
-  const [travelBuffer, setTravelBuffer] = useState(30); // minutes; 0 = off
+  const [filters, setFilters] = useState<CourseFilterValues>(DEFAULT_COURSE_FILTERS);
+  const { subjectCode, coreCodes, minRating, minRatingCount, creditsFilter, includeUnrated, requireRmpMatch,
+    sortByRating, locations, filterDays, earliestStartText, latestEndText, hideConflicts, travelBuffer } = filters;
+  const [catalogOptions, setCatalogOptions] = useState<CatalogOptions>({ subjects: [], cores: [] });
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
+  const updateFilters = useCallback((patch: Partial<CourseFilterValues>) => setFilters(previous => ({ ...previous, ...patch })), []);
+  useEffect(() => {
+    const request = new AbortController();
+    setOptionsLoading(true); setOptionsError(false);
+    getCatalogOptions(term, request.signal).then(options => {
+      if (!request.signal.aborted) setCatalogOptions(options);
+    }).catch(() => { if (!request.signal.aborted) { setOptionsError(true); setCatalogOptions({ subjects: [], cores: [] }); } })
+      .finally(() => { if (!request.signal.aborted) setOptionsLoading(false); });
+    return () => request.abort();
+  }, [term, optionsAttempt]);
   const [schedules, setSchedules] = useState<ScheduleSet[]>([]);
   const [activeScheduleId, setActiveScheduleId] = useState("");
   const [mySchedule, setMySchedule] = useState<ScheduleBlock[]>([]);
@@ -68,23 +71,7 @@ export function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Whether there's a real, targeted search to run vs. just showing the
-  // bounded "some open sections" default (browseOpenSections, see
-  // lib/courses.ts) -- a single filter of any kind (not just typed text --
-  // "show me what's open at Busch" with an empty query box is a legitimate
-  // search) is enough to count as one.
-  const hasAnyFilter =
-    query.trim() !== "" ||
-    minRating != null ||
-    minRatingCount > 0 ||
-    creditsFilter != null ||
-    requireRmpMatch ||
-    sortByRating ||
-    locations.size > 0 ||
-    filterDays.size > 0 ||
-    earliestStartText.trim() !== "" ||
-    latestEndText.trim() !== "" ||
-    hideConflicts;
+  const hasAnyFilter = query.trim() !== "" || activeFilterCount(filters) > 0;
 
   const refreshWatches = useCallback(async () => {
     const watches = await listWatches();
@@ -135,21 +122,20 @@ export function SearchPage() {
         : await searchCourses({
             term,
             query,
-            searchScope,
+            subjectCode: subjectCode || undefined,
+            coreCodes: coreCodes.length ? coreCodes : undefined,
             minRating: minRating ?? undefined,
             minRatingCount: minRatingCount || undefined,
             credits: creditsFilter ?? undefined,
             includeUnratedWhenFiltering: includeUnrated,
             requireRmpMatch,
             sortByRating,
-            locations: locations.size > 0 ? [...locations] : undefined,
+            locations: locations.length ? locations : undefined,
             hideScheduleConflicts: hideConflicts,
             mySchedule,
             travelBufferMinutes: travelBuffer,
-            days: filterDays.size > 0 ? [...filterDays] : undefined,
-            // Left as typed until it actually parses -- e.g. "9:0" mid-keystroke
-            // just doesn't apply a bound yet rather than erroring, same
-            // leniency as any other free-text filter input.
+            days: filterDays.length ? filterDays : undefined,
+            // Empty native time controls leave the corresponding bound open.
             earliestStart: parseTimeToMilitary(earliestStartText) ?? undefined,
             latestEnd: parseTimeToMilitary(latestEndText) ?? undefined,
           }, request.signal);
@@ -161,25 +147,7 @@ export function SearchPage() {
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
-  }, [
-    hasAnyFilter,
-    term,
-    query,
-    searchScope,
-    minRating,
-    minRatingCount,
-    creditsFilter,
-    includeUnrated,
-    requireRmpMatch,
-    sortByRating,
-    locations,
-    hideConflicts,
-    mySchedule,
-    travelBuffer,
-    filterDays,
-    earliestStartText,
-    latestEndText,
-  ]);
+  }, [hasAnyFilter, term, query, filters, mySchedule]);
 
   useEffect(() => {
     setVisibleCount(SECTION_BATCH_SIZE);
@@ -202,25 +170,8 @@ export function SearchPage() {
     setResults([]);
     setLoading(true);
     setTerm(next);
+    updateFilters({ subjectCode: "", coreCodes: [] });
     saveTermPreference(next);
-  }
-
-  function toggleLocation(value: string) {
-    setLocations((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
-  }
-
-  function toggleDay(value: string) {
-    setFilterDays((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
   }
 
   async function toggleWatch(section: SectionWithCourse) {
@@ -268,204 +219,10 @@ export function SearchPage() {
         </select>
       </header>
       <NotificationPrompt />
-      <div className="filter-row" role="group" aria-label="Search in">
-        <span className="filter-label">Search in</span>
-        <div className="chip-row">
-          {([{ value: "all", label: "Everything" }, { value: "subject", label: "Subject" }, { value: "core", label: "Core code" }] as const).map(option => (
-            <button key={option.value} className={`chip ${searchScope === option.value ? "active" : ""}`}
-              aria-pressed={searchScope === option.value} onClick={() => setSearchScope(option.value)}>{option.label}</button>
-          ))}
-        </div>
-      </div>
-      <div className="search-field">
-        <input
-          className="input search-input"
-          aria-label="Search courses"
-          placeholder={searchScope === "subject" ? "Subject name or number, e.g. Biology or 119" : searchScope === "core" ? "Core code, e.g. HST, NS, or WCd" : "Course, subject, core code, or index #"}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          spellCheck={false}
-        />
-        {query && (
-          <button className="search-clear" aria-label="Clear search" onClick={() => setQuery("")}>
-            ×
-          </button>
-        )}
-      </div>
-      {searchScope === "core" && <p className="hint">Enter one core code. Uppercase and lowercase both work.</p>}
-
-      <div className="filter-row">
-        <span className="filter-label">Min RMP rating</span>
-        <div className="chip-row">
-          {[null, 3, 3.5, 4, 4.5].map((r) => (
-            <button
-              key={String(r)}
-              className={`chip ${minRating === r ? "active" : ""}`}
-              onClick={() => setMinRating(r)}
-            >
-              {r == null ? "Any" : `${r}+`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="filter-row" role="group" aria-label="Minimum professor rating count">
-        <span className="filter-label">Minimum number of RMP ratings</span>
-        <div className="chip-row">
-          {[0, 5, 10, 20, 50].map(count => (
-            <button key={count} className={`chip ${minRatingCount === count ? "active" : ""}`}
-              aria-pressed={minRatingCount === count} onClick={() => setMinRatingCount(count)}>
-              {count === 0 ? "Any" : `${count}+`}
-            </button>
-          ))}
-        </div>
-        {minRatingCount > 0 && <p className="hint">Every listed instructor must have at least {minRatingCount} ratings. Instructors with no matched rating count are hidden.</p>}
-      </div>
-
-      <label className="switch-row">
-        <span className="filter-label">Sort by highest-rated professor first</span>
-        <input type="checkbox" checked={sortByRating} onChange={(e) => setSortByRating(e.target.checked)} />
-      </label>
-
-      {minRating != null && minRatingCount === 0 && (
-        <label className="switch-row">
-          <span className="filter-label">Include instructors with no RMP match</span>
-          <input type="checkbox" checked={includeUnrated} onChange={(e) => setIncludeUnrated(e.target.checked)} />
-        </label>
-      )}
-
-      {schedules.length > 1 && (
-        <div className="filter-row">
-          <span className="filter-label">Schedule to check conflicts against</span>
-          <select
-            className="input"
-            style={{ width: "auto", marginTop: 6 }}
-            value={activeScheduleId}
-            onChange={(e) => handleScheduleChange(e.target.value)}
-          >
-            {schedules.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <label className="switch-row">
-        <span className="filter-label">
-          Hide conflicts with {scheduleName || "My Schedule"} ({mySchedule.length} blocks)
-        </span>
-        <input type="checkbox" checked={hideConflicts} onChange={(e) => setHideConflicts(e.target.checked)} />
-      </label>
-
-      {hideConflicts && (
-        <label className="switch-row">
-          <span className="filter-label">Also flag tight cross-campus back-to-backs</span>
-          <select
-            className="input"
-            style={{ width: 90, flex: "0 0 auto" }}
-            value={travelBuffer}
-            onChange={(e) => setTravelBuffer(Number(e.target.value))}
-          >
-            <option value={0}>Off</option>
-            <option value={15}>15 min</option>
-            <option value={30}>30 min</option>
-            <option value={45}>45 min</option>
-            <option value={60}>60 min</option>
-          </select>
-        </label>
-      )}
-
-      <button className="more-filters-toggle" onClick={() => setShowMoreFilters((v) => !v)}>
-        {showMoreFilters ? "▾ Fewer filters" : "▸ More filters (credits, location, days/times, online/async)"}
-      </button>
-
-      {showMoreFilters && (
-        <>
-          <label className="switch-row">
-            <span className="filter-label">Only show professors with an RMP profile</span>
-            <input
-              type="checkbox"
-              checked={requireRmpMatch}
-              onChange={(e) => setRequireRmpMatch(e.target.checked)}
-            />
-          </label>
-
-          <div className="filter-row">
-            <span className="filter-label">Credits</span>
-            <div className="chip-row">
-              <button
-                className={`chip ${creditsFilter == null ? "active" : ""}`}
-                onClick={() => setCreditsFilter(null)}
-              >
-                Any
-              </button>
-              {/* Exact match, not "at least" -- someone filtering by credits
-                  usually needs a specific number to fill a specific gap in
-                  their schedule, not a minimum. Values verified against the
-                  real catalog, see CREDITS_OPTIONS in lib/courses.ts. */}
-              {CREDITS_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  className={`chip ${creditsFilter === c ? "active" : ""}`}
-                  onClick={() => setCreditsFilter(c)}
-                >
-                  {creditsLabel(c)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="filter-row">
-            <span className="filter-label">Campus / online</span>
-            <div className="chip-row">
-              {LOCATION_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`chip ${locations.has(opt.value) ? "active" : ""}`}
-                  onClick={() => toggleLocation(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="filter-row">
-            <span className="filter-label">Days</span>
-            <div className="chip-row">
-              {DAYS.map((d) => (
-                <button
-                  key={d}
-                  className={`day-chip ${filterDays.has(d) ? "active" : ""}`}
-                  onClick={() => toggleDay(d)}
-                >
-                  {DAY_LABELS[d]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="filter-row">
-            <span className="filter-label">Time window</span>
-            <div className="row-flex" style={{ marginTop: 6 }}>
-              <input
-                className="input"
-                placeholder="No earlier than, e.g. 9:00 AM"
-                value={earliestStartText}
-                onChange={(e) => setEarliestStartText(e.target.value)}
-              />
-              <input
-                className="input"
-                placeholder="No later than, e.g. 5:00 PM"
-                value={latestEndText}
-                onChange={(e) => setLatestEndText(e.target.value)}
-              />
-            </div>
-          </div>
-        </>
-      )}
+      <CourseFilters query={query} onQueryChange={setQuery} value={filters} onChange={updateFilters}
+        options={catalogOptions} optionsLoading={optionsLoading} optionsError={optionsError} onRetryOptions={() => setOptionsAttempt(attempt => attempt + 1)}
+        schedules={schedules} activeScheduleId={activeScheduleId} onScheduleChange={handleScheduleChange}
+        scheduleName={scheduleName} scheduleBlocks={mySchedule.length} />
 
       {loading && results.length === 0 ? (
         <div style={{ marginTop: 12 }}>
@@ -505,7 +262,7 @@ export function SearchPage() {
         {!loading && !error && !hasAnyFilter && results.length === 0 && (
           <EmptyState icon="search">
             No open sections to show yet for {termLabel(term)}. Type a course name, subject, core code, or
-            index number above — or use a filter below.
+            index number above — or tap a core code or choose a subject.
           </EmptyState>
         )}
         {!loading && !error && hasAnyFilter && results.length === 0 && (
