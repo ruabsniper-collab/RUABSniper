@@ -5,7 +5,7 @@ import { checkConflict, type ScheduleBlock } from "./schedule";
 import { militaryToMinutes } from "./time";
 import { listWatches } from "./watches";
 import { getAvailability, verifyAvailability } from "./availability";
-import { courseSearchFilter, matchesCourseSearch, matchesProfessorFilters, type SearchScope } from "./courseSearch";
+import { courseSearchFilter, matchesCatalogFilters, matchesCourseSearch, matchesProfessorFilters, type SearchScope } from "./courseSearch";
 
 const MIN_CONFIDENT_MATCH = 0.72; // mirrors backend/lib/rmp.ts's "fuzzy" acceptance floor
 const COURSE_COLUMNS = "id,term_year,term_code,campus,subject_code,subject_description,course_number,title,credits,core_codes,updated_at,section_listings:raw->section_listings";
@@ -44,6 +44,8 @@ export type SearchFilters = {
   term: Term;
   query?: string; // free text: title, subject name, subject/course number, or a core code
   searchScope?: SearchScope;
+  subjectCode?: string;
+  coreCodes?: string[]; // any selected core, combined with subject and other filters
   minRating?: number; // 0-5, only applied to sections with a confident RMP match
   minRatingCount?: number;
   includeUnratedWhenFiltering?: boolean; // if minRating is set, whether "no confident match" still passes
@@ -167,6 +169,8 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
     if (filters.credits != null) {
       courseQuery = courseQuery.or(`credits.eq.${filters.credits},raw->listing_credits.cs.[${filters.credits}]`);
     }
+    if (filters.subjectCode) courseQuery = courseQuery.eq("subject_code", filters.subjectCode);
+    if (filters.coreCodes?.length) courseQuery = courseQuery.or(filters.coreCodes.map(code => courseSearchFilter(code, "core")).join(","));
 
     if (q) {
       courseQuery = courseQuery.or(courseSearchFilter(q, scope));
@@ -180,6 +184,7 @@ export async function searchCourses(filters: SearchFilters, signal: AbortSignal)
   }
 
   if (filters.credits != null) sections = sections.filter((section) => section.courses.credits === filters.credits);
+  sections = sections.filter(section => matchesCatalogFilters(section.courses, filters));
   if (q && !(scope === "all" && /^\d{4,6}$/.test(q)))
     sections = sections.filter(({ courses }) => matchesCourseSearch(courses, q, scope));
 

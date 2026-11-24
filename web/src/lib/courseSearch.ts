@@ -2,6 +2,11 @@ import type { Course, ProfessorRmpMatch, SectionWithCourse } from "../types/db";
 
 export type SearchScope = "all" | "subject" | "core";
 
+export function matchesCatalogFilters(course: Course, filters: { subjectCode?: string; coreCodes?: string[] }): boolean {
+  if (filters.subjectCode && course.subject_code !== filters.subjectCode) return false;
+  return !filters.coreCodes?.length || filters.coreCodes.some(code => course.core_codes.some(actual => actual.toLowerCase() === code.toLowerCase()));
+}
+
 // Quote PostgREST values so punctuation in a course/subject name cannot
 // change the structure of the OR filter. Treat wildcard characters literally.
 export function courseSearchFilter(query: string, scope: SearchScope): string {

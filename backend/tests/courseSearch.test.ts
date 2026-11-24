@@ -74,7 +74,16 @@ test("real search keeps alternate-listing core codes separate and applies rating
     assert.equal(results[0].courses.title, "HISTORY SEMINAR");
     assert.ok(requests.some(url => url.searchParams.get("or")?.includes("raw->>section_listings")));
     assert.equal((await searchCourses({ ...filters, minRatingCount: 20 }, new AbortController().signal)).length, 0);
+    requests.length = 0;
+    const picked = await searchCourses({ term: filters.term, query: "", coreCodes: ["HST"], subjectCode: "119" }, new AbortController().signal);
+    assert.deepEqual(picked.map((s: SectionWithCourse) => s.id), ["seminar"], "A tapped core works with an empty search box and respects section listings");
+    const pickedRequest = requests.find(url => url.pathname.endsWith("/courses"))!;
+    assert.equal(pickedRequest.searchParams.get("subject_code"), "eq.119");
+    assert.ok(pickedRequest.searchParams.get("or")?.includes("HST"));
+    assert.equal((await searchCourses({ term: filters.term, coreCodes: ["NS"] }, new AbortController().signal)).length, 0);
+    assert.equal((await searchCourses({ term: filters.term, coreCodes: ["NS", "HST"] }, new AbortController().signal)).length, 1, "Multiple core choices match any selected code");
     const exact = await searchCourses({ term: filters.term, query: "12345" }, new AbortController().signal);
     assert.equal(exact[0].id, "exact", "Existing exact-index search stays available");
+    assert.equal((await searchCourses({ term: filters.term, query: "12345", subjectCode: "160" }, new AbortController().signal)).length, 0, "Exact-index search cannot bypass a chosen subject");
   } finally { globalThis.fetch = originalFetch; await server.close(); }
 });
